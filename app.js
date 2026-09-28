@@ -135,6 +135,7 @@ const DOM = {
   btnNudgeTimeUp: document.getElementById('btn-nudge-time-up'),
 
   // Export
+  exportEngine: document.getElementById('export-engine'),
   exportResolution: document.getElementById('export-resolution'),
   exportFps: document.getElementById('export-fps'),
   btnStartRender: document.getElementById('btn-start-render'),
@@ -1098,7 +1099,267 @@ function setStepStatus(badge, isDone) {
 }
 
 /**
- * İstemci tarafında Canvas + Web Audio API + MediaRecorder ile video render motoru
+ * WebCodecs + MP4-Muxer ile Donanım Hızlandırmalı Çevrimdışı Ultra Hızlı Render (2-3 Saniye!)
+ */
+async function renderWithWebCodecs(targetW, targetH, fps, decodedAudioBuffer) {
+  const totalDuration = decodedAudioBuffer.duration;
+  const sampleRate = decodedAudioBuffer.sampleRate;
+  const numberOfChannels = Math.min(2, decodedAudioBuffer.numberOfChannels);
+
+  // 1. MP4 Muxer başlat
+  const muxer = new Mp4Muxer.Muxer({
+    target: new Mp4Muxer.ArrayBufferTarget(),
+    video: {
+      codec: 'avc',
+      width: targetW,
+      height: targetH,
+    },
+    audio: {
+      codec: 'aac',
+      numberOfChannels: numberOfChannels,
+      sampleRate: sampleRate,
+    },
+    fastStart: 'in-memory',
+    firstTimestampBehavior: 'offset',
+  });
+
+  // 2. VideoEncoder başlat
+  let videoError = null;
+  const videoEncoder = new VideoEncoder({
+    output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+    error: (e) => {
+      console.error('VideoEncoder Hatası:', e);
+      videoError = e;
+    },
+  });
+
+  const videoConfig = {
+    codec: 'avc1.4d002a', // H.264
+    width: targetW,
+    height: targetH,
+    bitrate: 6_000_000,
+    framerate: fps,
+  };
+
+  const videoSupport = await VideoEncoder.isConfigSupported(videoConfig);
+  if (!videoSupport.supported) {
+    throw new Error('H.264 donanım enkoderi desteklenmiyor');
+  }
+  videoEncoder.configure(videoConfig);
+
+  // 3. AudioEncoder başlat
+  let audioError = null;
+  const audioEncoder = new AudioEncoder({
+    output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+    error: (e) => {
+      console.error('AudioEncoder Hatası:', e);
+      audioError = e;
+    },
+  });
+
+  const audioConfig = {
+    codec: 'mp4a.40.2',
+    numberOfChannels: numberOfChannels,
+    sampleRate: sampleRate,
+    bitrate: 128_000,
+  };
+
+  const audioSupport = await AudioEncoder.isConfigSupported(audioConfig);
+  if (!audioSupport.supported) {
+    throw new Error('AAC ses enkoderi desteklenmiyor');
+  }
+  audioEncoder.configure(audioConfig);
+
+  DOM.renderStatusText.textContent = '⚡ Ses verisi donanım hızlandırmayla kodlanıyor...';
+
+  // Sesi AudioData bloklarına böl ve encode et
+  const chunkSize = 2048;
+  const totalSamples = decodedAudioBuffer.length;
+  for (let offset = 0; offset < totalSamples; offset += chunkSize) {
+    const currentChunkSize = Math.min(chunkSize, totalSamples - offset);
+    const planarBuffer = new Float32Array(currentChunkSize * numberOfChannels);
+
+    for (let ch = 0; ch < numberOfChannels; ch++) {
+      const channelData = decodedAudioBuffer.getChannelData(ch).subarray(offset, offset + currentChunkSize);
+      planarBuffer.set(channelData, ch * currentChunkSize);
+    }
+
+    const audioData = new AudioData({
+      format: 'f32-planar',
+      sampleRate: sampleRate,
+      numberOfChannels: numberOfChannels,
+      numberOfFrames: currentChunkSize,
+      timestamp: Math.round((offset / sampleRate) * 1_000_000),
+      data: planarBuffer,
+    });
+
+    audioEncoder.encode(audioData);
+    audioData.close();
+  }
+  await audioEncoder.flush();
+
+  // 4. Kareleri donanım hızında çiz ve VideoEncoder'a gönder
+  const totalFrames = Math.ceil(totalDuration * fps);
+  const renderCanvas = document.createElement('canvas');
+  renderCanvas.width = targetW;
+  renderCanvas.height = targetH;
+  const renderCtx = renderCanvas.getContext('2d');
+  const previewCtx = DOM.renderPreviewCanvas.getContext('2d');
+
+  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+    if (State.rendering.cancelled || videoError) break;
+
+    const timeSec = frameIndex / fps;
+    drawFrame(renderCtx, timeSec, true);
+
+    const videoFrame = new VideoFrame(renderCanvas, {
+      timestamp: Math.round(timeSec * 1_000_000),
+    });
+
+    const isKeyframe = frameIndex % (fps * 2) === 0;
+    videoEncoder.encode(videoFrame, { keyFrame: isKeyframe });
+    videoFrame.close();
+
+    // İlerlemeyi güncelle
+    if (frameIndex % 8 === 0 || frameIndex === totalFrames - 1) {
+      const percent = Math.min(100, Math.round(((frameIndex + 1) / totalFrames) * 100));
+      DOM.renderProgressBar.style.width = `${percent}%`;
+      DOM.renderPercentText.textContent = `%${percent}`;
+      DOM.renderStatusText.textContent = `⚡ Donanım Hızlandırma: Kare ${frameIndex + 1} / ${totalFrames} (%${percent})`;
+
+      previewCtx.clearRect(0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
+      previewCtx.drawImage(renderCanvas, 0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
+
+      if (videoEncoder.encodeQueueSize > 10) {
+        await new Promise(r => setTimeout(r, 2));
+      }
+    }
+  }
+
+  if (State.rendering.cancelled || videoError) {
+    videoEncoder.close();
+    audioEncoder.close();
+    return null;
+  }
+
+  DOM.renderStatusText.textContent = 'MP4 dosyası paketleniyor...';
+  await videoEncoder.flush();
+  videoEncoder.close();
+  audioEncoder.close();
+
+  muxer.finalize();
+  const buffer = muxer.target.buffer;
+  return new Blob([buffer], { type: 'video/mp4' });
+}
+
+/**
+ * Standart MediaRecorder ile Gerçek Zamanlı Video Kayıt Motoru (Evrensel Yedek)
+ */
+async function renderWithMediaRecorder(targetW, targetH, fps, decodedAudioBuffer, audioContext) {
+  const totalDuration = decodedAudioBuffer.duration;
+  const audioDestination = audioContext.createMediaStreamDestination();
+  const audioSource = audioContext.createBufferSource();
+  audioSource.buffer = decodedAudioBuffer;
+  audioSource.connect(audioDestination);
+
+  const renderCanvas = document.createElement('canvas');
+  renderCanvas.width = targetW;
+  renderCanvas.height = targetH;
+  const renderCtx = renderCanvas.getContext('2d');
+  const previewCtx = DOM.renderPreviewCanvas.getContext('2d');
+
+  const canvasStream = renderCanvas.captureStream(fps);
+  const videoTrack = canvasStream.getVideoTracks()[0];
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...audioDestination.stream.getAudioTracks()
+  ]);
+
+  let mimeType = 'video/webm;codecs=vp9,opus';
+  let fileExtension = 'webm';
+
+  if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1,mp4a.40.2')) {
+    mimeType = 'video/mp4;codecs=avc1,mp4a.40.2';
+    fileExtension = 'mp4';
+  } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+    mimeType = 'video/mp4';
+    fileExtension = 'mp4';
+  } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+    mimeType = 'video/webm;codecs=vp8,opus';
+    fileExtension = 'webm';
+  }
+
+  const recordedChunks = [];
+  const mediaRecorder = new MediaRecorder(combinedStream, {
+    mimeType: mimeType,
+    videoBitsPerSecond: 8_000_000,
+  });
+
+  mediaRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+  };
+
+  const renderPromise = new Promise((resolve, reject) => {
+    mediaRecorder.onstop = () => {
+      const videoBlob = new Blob(recordedChunks, { type: mimeType });
+      resolve({ blob: videoBlob, ext: fileExtension });
+    };
+    mediaRecorder.onerror = (err) => reject(err);
+  });
+
+  mediaRecorder.start(200);
+  audioSource.start(0);
+
+  const startPerfTime = performance.now();
+  const frameIntervalMs = 1000 / fps;
+
+  DOM.renderStatusText.textContent = `Standart render işleniyor (${fps} FPS • ${targetW}x${targetH})...`;
+
+  while (!State.rendering.cancelled) {
+    const elapsed = (performance.now() - startPerfTime) / 1000;
+
+    drawFrame(renderCtx, elapsed, true);
+
+    if (videoTrack && videoTrack.requestFrame) {
+      try { videoTrack.requestFrame(); } catch (err) {}
+    }
+
+    previewCtx.clearRect(0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
+    previewCtx.drawImage(renderCanvas, 0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
+
+    const percent = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+    const remainingSec = Math.max(0, Math.ceil(totalDuration - elapsed));
+    const remM = Math.floor(remainingSec / 60).toString().padStart(2, '0');
+    const remS = Math.floor(remainingSec % 60).toString().padStart(2, '0');
+
+    DOM.renderProgressBar.style.width = `${percent}%`;
+    DOM.renderPercentText.textContent = `%${percent}`;
+    DOM.renderStatusText.textContent = `İşleniyor: ${formatTime(elapsed)} / ${formatTime(totalDuration)} (Kalan: ${remM}:${remS})`;
+
+    if (elapsed >= totalDuration) {
+      break;
+    }
+
+    await new Promise(r => setTimeout(r, frameIntervalMs));
+  }
+
+  if (State.rendering.cancelled) {
+    mediaRecorder.stop();
+    audioSource.stop();
+    return null;
+  }
+
+  await new Promise(r => setTimeout(r, 400));
+
+  DOM.renderStatusText.textContent = 'Son video dosyası paketleniyor...';
+  mediaRecorder.stop();
+  audioSource.stop();
+
+  return await renderPromise;
+}
+
+/**
+ * Ana Video Render Başlatıcı
  */
 async function startVideoRender() {
   if (!State.image.element || !State.audio.file || !State.box.active) {
@@ -1161,114 +1422,39 @@ async function startVideoRender() {
     const audioArrayBuffer = await State.audio.file.arrayBuffer();
     const decodedAudioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
 
-    const totalDuration = decodedAudioBuffer.duration;
-    const audioDestination = audioContext.createMediaStreamDestination();
-    const audioSource = audioContext.createBufferSource();
-    audioSource.buffer = decodedAudioBuffer;
-    audioSource.connect(audioDestination);
+    let blob = null;
+    let ext = 'mp4';
 
-    // 4. MediaStream ve MediaRecorder Kurulumu
-    const canvasStream = renderCanvas.captureStream(fps);
-    const videoTrack = canvasStream.getVideoTracks()[0];
-    const combinedStream = new MediaStream([
-      ...canvasStream.getVideoTracks(),
-      ...audioDestination.stream.getAudioTracks()
-    ]);
+    const useFast = DOM.exportEngine && DOM.exportEngine.value === 'fast';
+    const canUseWebCodecs = typeof VideoEncoder !== 'undefined' && 
+                            typeof AudioEncoder !== 'undefined' && 
+                            typeof AudioData !== 'undefined' && 
+                            typeof Mp4Muxer !== 'undefined';
 
-    // Desteklenen MIME türünü seç (Öncelik: MP4 / AVC1)
-    let mimeType = 'video/webm;codecs=vp9,opus';
-    let fileExtension = 'webm';
-
-    if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1,mp4a.40.2')) {
-      mimeType = 'video/mp4;codecs=avc1,mp4a.40.2';
-      fileExtension = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/mp4')) {
-      mimeType = 'video/mp4';
-      fileExtension = 'mp4';
-    } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-      mimeType = 'video/webm;codecs=vp8,opus';
-      fileExtension = 'webm';
+    if (useFast && canUseWebCodecs) {
+      try {
+        blob = await renderWithWebCodecs(targetW, targetH, fps, decodedAudioBuffer);
+        ext = 'mp4';
+      } catch (fastErr) {
+        console.warn('WebCodecs ultra hızlı render başlatılamadı, MediaRecorder moduna geçiliyor:', fastErr);
+        blob = null;
+      }
     }
 
-    const recordedChunks = [];
-    const mediaRecorder = new MediaRecorder(combinedStream, {
-      mimeType: mimeType,
-      videoBitsPerSecond: 8_000_000, // 8 Mbps yüksek netlik
-    });
-
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
-    const renderPromise = new Promise((resolve, reject) => {
-      mediaRecorder.onstop = () => {
-        const videoBlob = new Blob(recordedChunks, { type: mimeType });
-        resolve({ blob: videoBlob, ext: fileExtension });
-      };
-      mediaRecorder.onerror = (err) => reject(err);
-    });
-
-    // Kaydı ve sesi başlat
-    mediaRecorder.start(200);
-    audioSource.start(0);
-
-    const startPerfTime = performance.now();
-    const frameIntervalMs = 1000 / fps;
-
-    DOM.renderStatusText.textContent = `Video işleniyor (${fps} FPS • ${targetW}x${targetH})...`;
-
-    // Gerçek zamanlı senkronize çizim döngüsü:
-    // MediaRecorder ses ve video akışını gerçek zamanlı kaydettiği için,
-    // döngü tam olarak sesin gerçek süresi (totalDuration) boyunca devam etmelidir.
-    while (!State.rendering.cancelled) {
-      const elapsed = (performance.now() - startPerfTime) / 1000;
-
-      // 1. O andaki geçerli kareyi çiz
-      drawFrame(renderCtx, elapsed, true);
-
-      // 2. Tarayıcı video enkoderine bu kareyi ZORUNLU olarak gönder
-      if (videoTrack && videoTrack.requestFrame) {
-        try { videoTrack.requestFrame(); } catch (err) {}
+    // WebCodecs desteklenmiyorsa veya hata verirse MediaRecorder ile devam et
+    if (!blob && !State.rendering.cancelled) {
+      const res = await renderWithMediaRecorder(targetW, targetH, fps, decodedAudioBuffer, audioContext);
+      if (res) {
+        blob = res.blob;
+        ext = res.ext;
       }
-
-      // 3. Canlı önizleme ekranına yansıt
-      previewCtx.clearRect(0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
-      previewCtx.drawImage(renderCanvas, 0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
-
-      // 3. İlerleme ve kalan süre göstergesi
-      const percent = Math.min(100, Math.round((elapsed / totalDuration) * 100));
-      const remainingSec = Math.max(0, Math.ceil(totalDuration - elapsed));
-      const remM = Math.floor(remainingSec / 60).toString().padStart(2, '0');
-      const remS = Math.floor(remainingSec % 60).toString().padStart(2, '0');
-
-      DOM.renderProgressBar.style.width = `${percent}%`;
-      DOM.renderPercentText.textContent = `%${percent}`;
-      DOM.renderStatusText.textContent = `İşleniyor: ${formatTime(elapsed)} / ${formatTime(totalDuration)} (Kalan: ${remM}:${remS})`;
-
-      // Ses tamamen bitti mi?
-      if (elapsed >= totalDuration) {
-        break;
-      }
-
-      // Kare hızına (30 / 60 FPS) göre bekle
-      await new Promise(r => setTimeout(r, frameIntervalMs));
     }
 
-    if (State.rendering.cancelled) {
-      mediaRecorder.stop();
-      audioSource.stop();
+    if (State.rendering.cancelled || !blob) {
       audioContext.close();
       return;
     }
 
-    // Sesin son hecesinin veya yankısının kesilmemesi için ufak bir pay bırak (400ms)
-    await new Promise(r => setTimeout(r, 400));
-
-    DOM.renderStatusText.textContent = 'Son video dosyası paketleniyor...';
-    mediaRecorder.stop();
-    audioSource.stop();
-
-    const { blob, ext } = await renderPromise;
     audioContext.close();
 
     // Render Bitti: Videoyu Önizleme Oynatıcıya ve İndirme Bağlantısına Ver

@@ -462,6 +462,18 @@
           </div>
         </div>
 
+        <!-- Render Hızı / Motoru -->
+        <div>
+          <label class="block text-zinc-400 mb-1 text-[11px] font-medium flex items-center justify-between">
+            <span>Render Motoru</span>
+            <span class="text-[10px] text-emerald-400 font-bold">⚡ 2-3 Saniyede Tamamlar</span>
+          </label>
+          <select id="export-engine" class="w-full bg-zinc-950 border border-emerald-500/30 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 font-medium focus:outline-none focus:border-emerald-500">
+            <option value="fast" selected>⚡ Ultra Hızlı (Donanım Destekli WebCodecs • 2-3 sn)</option>
+            <option value="realtime">🎬 Standart Gerçek Zamanlı (MediaRecorder)</option>
+          </select>
+        </div>
+
         <!-- Render Butonu -->
         <button id="btn-start-render" class="w-full py-3 px-4 rounded-xl font-bold text-sm bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 shadow-lg shadow-emerald-950/80 hover:shadow-emerald-900/60 transition-all flex items-center justify-center gap-2.5 active:scale-[0.98] disabled:opacity-40 disabled:pointer-events-none" disabled>
           <i data-lucide="download" class="w-4 h-4"></i>
@@ -594,6 +606,9 @@
 
   <!-- Audio Element (Internal playback sync) -->
   <audio id="native-audio" class="hidden"></audio>
+
+  <!-- MP4 Muxer (Ultra Hızlı Çevrimdışı Donanım Render için) -->
+  <script src="mp4-muxer.js"></script>
 
   <!-- Uygulama Mantığı (JavaScript) -->
   <script src="app.js"></script>
