@@ -111,6 +111,9 @@ const DOM = {
   btnAutoChoices5: document.getElementById('btn-auto-choices-5'),
   btnAutoChoices4: document.getElementById('btn-auto-choices-4'),
   btnDetectPixelChoices: document.getElementById('btn-detect-pixel-choices'),
+  btnClickWrap: document.getElementById('btn-click-wrap'),
+  cfgChoiceWidth: document.getElementById('cfg-choice-width'),
+  cfgChoiceAlign: document.getElementById('cfg-choice-align'),
   smartAssistantStatus: document.getElementById('smart-assistant-status'),
   targetChoiceBadge: document.getElementById('target-choice-badge'),
   targetChoiceLetter: document.getElementById('target-choice-letter'),
@@ -746,6 +749,18 @@ DOM.canvas.addEventListener('mousedown', (e) => {
   if (!State.image.element) return;
   const pos = getCanvasCoordinates(e);
 
+  // 0. Sihirli Tıkla-Sar Modu veya Shift/Alt ile Tıklama (Şıkkı Otomatik Algıla ve Sar)
+  if (State.interaction.isClickWrapMode || e.shiftKey || e.altKey) {
+    const scale = DOM.canvas.width / State.image.naturalWidth;
+    const natX = Math.round(pos.x / scale);
+    const natY = Math.round(pos.y / scale);
+    const detectedBox = findTextBoundingBoxAt(natX, natY);
+    if (detectedBox) {
+      applyDetectedBoxToChoice(detectedBox);
+      return;
+    }
+  }
+
   // 1. Önce aktif kutunun tutamaçlarına tıklandı mı kontrol et
   const handle = hitTestHandle(pos);
   if (handle) {
@@ -952,7 +967,7 @@ DOM.btnClearBox.addEventListener('click', () => {
 // ==========================================
 
 /**
- * 4 veya 5 şıkkı soru görselinin tipik şık alanına altın oranla yerleştirir
+ * 4 veya 5 şıkkı soru görselinin şık alanına seçilen genişlik ve hizalamaya göre yerleştirir
  */
 function applyChoiceTemplate(numChoices = 5) {
   if (!State.image.element) {
@@ -964,15 +979,25 @@ function applyChoiceTemplate(numChoices = 5) {
   const nh = State.image.naturalHeight;
   const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, numChoices);
 
-  // Soru seçenekleri için orantılı yerleşim:
-  // X: %8'i, Genişlik: %82'si
-  // Y: Soru görselinin alt yarısı (%46 ile %92 arası)
+  // Kullanıcının seçtiği genişlik ve hizalama tercihini oku
+  const widthMode = DOM.cfgChoiceWidth ? DOM.cfgChoiceWidth.value : 'compact';
+  const alignMode = DOM.cfgChoiceAlign ? DOM.cfgChoiceAlign.value : 'center';
+
+  let widthRatio = 0.32; // Kompakt varsayılan: Arapça veya tek sütunlu test soruları için ideal
+  if (widthMode === 'medium') widthRatio = 0.55;
+  else if (widthMode === 'full') widthRatio = 0.82;
+
+  const boxW = Math.round(nw * widthRatio);
+  let boxX = Math.round(nw * 0.08); // Sola yasla
+  if (alignMode === 'center') {
+    boxX = Math.round((nw - boxW) / 2); // Ortala
+  }
+
+  // Soru seçenekleri dikey yerleşimi (%46 ile %90 arası)
   const startY = Math.round(nh * 0.46);
-  const availableH = Math.round(nh * 0.46);
+  const availableH = Math.round(nh * 0.44);
   const rowSlot = availableH / numChoices;
-  const boxH = Math.max(34, Math.min(64, Math.round(rowSlot * 0.72)));
-  const boxW = Math.round(nw * 0.82);
-  const boxX = Math.round(nw * 0.08);
+  const boxH = Math.max(30, Math.min(52, Math.round(rowSlot * 0.68)));
 
   // Mevcut otomatik şıkları temizle (varsa)
   State.annotations = State.annotations.filter(a => !a.isChoice);
@@ -1018,7 +1043,42 @@ function applyChoiceTemplate(numChoices = 5) {
 }
 
 /**
- * Piksel projeksiyon analizi ile görseldeki şık satırlarını tarar (Sıfır Yapay Zeka, Saf Canvas Matematiği)
+ * Genişlik veya Hizalama dropdown değiştiğinde mevcut şık kutularını yeniden boyutlandırır/hizalar
+ */
+function updateChoicesLayout() {
+  const choices = State.annotations.filter(a => a.isChoice);
+  if (choices.length === 0 || !State.image.element) return;
+
+  const nw = State.image.naturalWidth;
+  const widthMode = DOM.cfgChoiceWidth ? DOM.cfgChoiceWidth.value : 'compact';
+  const alignMode = DOM.cfgChoiceAlign ? DOM.cfgChoiceAlign.value : 'center';
+
+  let widthRatio = 0.32;
+  if (widthMode === 'medium') widthRatio = 0.55;
+  else if (widthMode === 'full') widthRatio = 0.82;
+
+  const boxW = Math.round(nw * widthRatio);
+  let boxX = Math.round(nw * 0.08);
+  if (alignMode === 'center') {
+    boxX = Math.round((nw - boxW) / 2);
+  }
+
+  choices.forEach(c => {
+    c.box.width = boxW;
+    c.box.x = boxX;
+  });
+
+  const activeAnn = getActiveAnnotation();
+  if (activeAnn && activeAnn.isChoice) {
+    State.box.width = activeAnn.box.width;
+    State.box.x = activeAnn.box.x;
+  }
+
+  renderCanvas();
+}
+
+/**
+ * Piksel projeksiyon analizi ile görseldeki şık satırlarını ve X sınırlarını tarar (Sıfır Yapay Zeka, Saf Canvas Matematiği)
  */
 function detectQuestionChoices(numChoices = 5) {
   if (!State.image.element) {
@@ -1085,7 +1145,7 @@ function detectQuestionChoices(numChoices = 5) {
   const blocks = [];
   let inBlock = false;
   let bStart = 0;
-  const threshold = Math.max(4, scanW * 0.012);
+  const threshold = Math.max(4, scanW * 0.008);
 
   for (let y = 0; y < scanH; y++) {
     if (smoothed[y] > threshold) {
@@ -1097,11 +1157,13 @@ function detectQuestionChoices(numChoices = 5) {
       if (inBlock) {
         inBlock = false;
         const bH = y - bStart;
-        if (bH >= Math.round(nh * 0.022)) {
+        if (bH >= Math.round(nh * 0.018)) {
           blocks.push({
             top: scanTop + bStart,
             bottom: scanTop + y,
-            height: bH
+            height: bH,
+            yStartInScan: bStart,
+            yEndInScan: y
           });
         }
       }
@@ -1112,14 +1174,41 @@ function detectQuestionChoices(numChoices = 5) {
   if (blocks.length >= numChoices) {
     const selectedBlocks = blocks.slice(-numChoices);
     const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, numChoices);
-    const boxW = Math.round(nw * 0.82);
-    const boxX = Math.round(nw * 0.08);
+
+    // Her bloğun gerçek X sınırlarını (minX, maxX) tara
+    let commonMinX = nw;
+    let commonMaxX = 0;
+
+    selectedBlocks.forEach(b => {
+      let bMin = nw;
+      let bMax = 0;
+      for (let y = b.yStartInScan; y <= b.yEndInScan; y++) {
+        const offset = y * scanW * 4;
+        for (let x = 0; x < scanW; x++) {
+          const idx = offset + x * 4;
+          const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+          if (lum < 165) {
+            const absX = scanLeft + x;
+            if (absX < bMin) bMin = absX;
+            if (absX > bMax) bMax = absX;
+          }
+        }
+      }
+      b.minX = bMin < nw ? bMin : scanLeft;
+      b.maxX = bMax > 0 ? bMax : scanLeft + scanW;
+      if (b.minX < commonMinX) commonMinX = b.minX;
+      if (b.maxX > commonMaxX) commonMaxX = b.maxX;
+    });
+
+    const padX = 18;
+    const boxX = Math.max(0, commonMinX - padX);
+    const boxW = Math.min(nw - boxX, (commonMaxX - commonMinX) + padX * 2);
 
     State.annotations = State.annotations.filter(a => !a.isChoice);
 
     const newChoices = selectedBlocks.map((b, idx) => {
       const letter = letters[idx];
-      const padY = Math.max(4, Math.round(b.height * 0.25));
+      const padY = Math.max(4, Math.round(b.height * 0.20));
       return {
         id: `ann_choice_${letter}_${Date.now()}_${idx}`,
         isChoice: true,
@@ -1157,6 +1246,191 @@ function detectQuestionChoices(numChoices = 5) {
   } else {
     // Bloklar tam ayırt edilemediyse orantılı şablonu uygula
     applyChoiceTemplate(numChoices);
+  }
+}
+
+/**
+ * Tıklanan koordinatın (X, Y) etrafındaki koyu metin satırının sınırlarını (Bounding Box) tespit eder (Tıkla-Sar Motoru)
+ */
+function findTextBoundingBoxAt(clickX, clickY) {
+  if (!State.image.element) return null;
+
+  const nw = State.image.naturalWidth;
+  const nh = State.image.naturalHeight;
+
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = nw;
+  offCanvas.height = nh;
+  const octx = offCanvas.getContext('2d');
+  octx.drawImage(State.image.element, 0, 0);
+
+  // Arama penceresi: tıklanan noktanın çevresinde
+  const padW = Math.round(nw * 0.25);
+  const padH = Math.round(nh * 0.07);
+
+  const x0 = Math.max(0, clickX - padW);
+  const y0 = Math.max(0, clickY - padH);
+  const w = Math.min(nw - x0, padW * 2);
+  const h = Math.min(nh - y0, padH * 2);
+
+  let imgData;
+  try {
+    imgData = octx.getImageData(x0, y0, w, h);
+  } catch (e) {
+    return null;
+  }
+  const data = imgData.data;
+
+  // Dikey satır sınırlarını bul
+  const relClickY = clickY - y0;
+  const rowHasDark = new Uint8Array(h);
+
+  for (let y = 0; y < h; y++) {
+    const rowOffset = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      const idx = rowOffset + x * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 165) {
+        rowHasDark[y] = 1;
+        break;
+      }
+    }
+  }
+
+  let topY = relClickY;
+  let bottomY = relClickY;
+
+  // Eğer doğrudan boşluğa tıklandıysa, en yakın metin satırını bul
+  if (!rowHasDark[relClickY]) {
+    let nearestDist = 999;
+    let nearestY = -1;
+    for (let y = 0; y < h; y++) {
+      if (rowHasDark[y]) {
+        const d = Math.abs(y - relClickY);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestY = y;
+        }
+      }
+    }
+    if (nearestY !== -1 && nearestDist < Math.round(nh * 0.04)) {
+      topY = nearestY;
+      bottomY = nearestY;
+    } else {
+      return null;
+    }
+  }
+
+  while (topY > 0 && rowHasDark[topY]) topY--;
+  while (bottomY < h - 1 && rowHasDark[bottomY]) bottomY++;
+
+  if (bottomY - topY < 8) return null;
+
+  // Bu satır aralığındaki sol ve sağ sınırları (minX, maxX) bul
+  let minRelX = w;
+  let maxRelX = 0;
+  let found = false;
+
+  for (let y = topY; y <= bottomY; y++) {
+    const rowOffset = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      const idx = rowOffset + x * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 165) {
+        if (x < minRelX) minRelX = x;
+        if (x > maxRelX) maxRelX = x;
+        found = true;
+      }
+    }
+  }
+
+  if (!found || maxRelX - minRelX < 10) return null;
+
+  const padX = 14;
+  const padYVal = 6;
+
+  const finalX = Math.max(0, x0 + minRelX - padX);
+  const finalY = Math.max(0, y0 + topY - padYVal);
+  const finalW = Math.min(nw - finalX, (maxRelX - minRelX) + padX * 2);
+  const finalH = Math.min(nh - finalY, (bottomY - topY) + padYVal * 2);
+
+  return {
+    x: finalX,
+    y: finalY,
+    width: Math.max(40, finalW),
+    height: Math.max(26, finalH)
+  };
+}
+
+/**
+ * Tıklanan metin kutusunu mevcut sıradaki şıkka atar veya yeni şık kutusu oluşturur
+ */
+function applyDetectedBoxToChoice(detectedBox) {
+  const letters = ['A', 'B', 'C', 'D', 'E'];
+  const pending = State.annotations.filter(a => a.isChoice && a.isPending);
+
+  if (pending.length > 0) {
+    const targetAnn = (State.activeAnnotationId && pending.some(p => p.id === State.activeAnnotationId))
+      ? pending.find(p => p.id === State.activeAnnotationId)
+      : pending[0];
+
+    targetAnn.box = { ...detectedBox };
+    State.box = { ...detectedBox, active: true };
+    selectAnnotation(targetAnn.id);
+
+    // Bir sonraki bekleyene odaklan
+    advanceToNextPendingChoice();
+  } else {
+    const existingChoices = State.annotations.filter(a => a.isChoice);
+    const nextIdx = existingChoices.length;
+    const letter = letters[nextIdx] || `Şık ${nextIdx + 1}`;
+
+    const newChoice = {
+      id: `ann_choice_${letter}_${Date.now()}`,
+      isChoice: true,
+      choiceLetter: letter,
+      label: `${letter} Şıkkı`,
+      isPending: true,
+      type: 'neutral',
+      shape: 'rect',
+      box: { ...detectedBox },
+      timestamp: 0,
+      color: '#38bdf8',
+      opacity: State.highlight.opacity || 0.30,
+      borderWidth: State.highlight.borderWidth || 4,
+      borderRadius: State.highlight.borderRadius || 14,
+      glow: State.highlight.glow !== undefined ? State.highlight.glow : true,
+      animType: State.highlight.animType || 'scale_glow',
+      animDuration: State.highlight.animDuration || 0.7,
+      checkmark: { enabled: false, position: 'right', style: 'badge' },
+      crossmark: { enabled: false, position: 'right', style: 'badge' }
+    };
+
+    State.annotations.push(newChoice);
+    selectAnnotation(newChoice.id);
+  }
+
+  updateSmartAssistantUI();
+  renderAnnotationsList();
+  renderCanvas();
+  updateStepIndicator();
+  updateRenderButtonState();
+}
+
+/**
+ * Tıkla-Sar modunu açıp kapatır
+ */
+function toggleClickWrapMode(forceState = null) {
+  State.interaction.isClickWrapMode = (forceState !== null) ? forceState : !State.interaction.isClickWrapMode;
+  if (!DOM.btnClickWrap) return;
+  if (State.interaction.isClickWrapMode) {
+    DOM.btnClickWrap.className = 'px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-500 text-white border border-indigo-400 flex items-center gap-1.5 transition-all shadow-md shadow-indigo-950/50 ring-2 ring-indigo-400/50';
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `🪄 <strong class="text-indigo-300">Tıkla-Sar Aktif:</strong> Soru görselindeki şıkların üzerine sırayla tıklayın, kutular milisaniyeler içinde şıkkı saracaktır.`;
+    }
+  } else {
+    DOM.btnClickWrap.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 transition-all active:scale-95';
+    updateSmartAssistantUI();
   }
 }
 
@@ -1219,7 +1493,7 @@ function updateSmartAssistantUI() {
   if (choices.length === 0) {
     if (DOM.targetChoiceBadge) DOM.targetChoiceBadge.classList.add('hidden');
     if (DOM.smartAssistantStatus) {
-      DOM.smartAssistantStatus.innerHTML = `Şıkları 1 tıkla yerleştirin; ses çalarken <kbd class="px-1 bg-zinc-800 text-rose-300 rounded font-mono text-[10px]">X</kbd> (Ele) ve <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">M</kbd> (Doğrula) ile kurgulayın.`;
+      DOM.smartAssistantStatus.innerHTML = `Şıkları 1 tıkla yerleştirin veya <strong class="text-indigo-300">🪄 Tıkla-Sar</strong> ile seçin; ses çalarken <kbd class="px-1 bg-zinc-800 text-rose-300 rounded font-mono text-[10px]">X</kbd> ve <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">M</kbd> ile kurgulayın.`;
     }
     return;
   }
@@ -1262,6 +1536,15 @@ if (DOM.btnAutoChoices4) {
 }
 if (DOM.btnDetectPixelChoices) {
   DOM.btnDetectPixelChoices.addEventListener('click', () => detectQuestionChoices(5));
+}
+if (DOM.btnClickWrap) {
+  DOM.btnClickWrap.addEventListener('click', () => toggleClickWrapMode());
+}
+if (DOM.cfgChoiceWidth) {
+  DOM.cfgChoiceWidth.addEventListener('change', updateChoicesLayout);
+}
+if (DOM.cfgChoiceAlign) {
+  DOM.cfgChoiceAlign.addEventListener('change', updateChoicesLayout);
 }
 
 // ==========================================
@@ -1401,36 +1684,23 @@ function drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann) {
   targetCtx.fillStyle = isActive ? 'rgba(16, 185, 129, 0.14)' : 'rgba(56, 189, 248, 0.05)';
   targetCtx.fill();
 
-  // Sol üstte şık harfi rozeti
-  const badgeH = Math.max(20, Math.round(22 * scale));
-  const badgeW = Math.max(26, Math.round(28 * scale));
-  const badgeX = bx + 6 * scale;
-  const badgeY = by + 6 * scale;
+  // Sol üstte şık harfi rozeti (İçeriği kapatmayan zarif hap)
+  const badgeH = Math.max(16, Math.round(18 * scale));
+  const badgeW = Math.max(20, Math.round(22 * scale));
+  const badgeX = bx + 4 * scale;
+  const badgeY = by + 4 * scale;
 
   targetCtx.fillStyle = isActive ? '#10b981' : '#0284c7';
   targetCtx.beginPath();
-  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 6 * scale);
+  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 4 * scale);
   else targetCtx.rect(badgeX, badgeY, badgeW, badgeH);
   targetCtx.fill();
 
   targetCtx.fillStyle = '#ffffff';
-  targetCtx.font = `bold ${Math.max(11, Math.round(13 * scale))}px "JetBrains Mono", monospace`;
+  targetCtx.font = `bold ${Math.max(9, Math.round(11 * scale))}px "JetBrains Mono", monospace`;
   targetCtx.textAlign = 'center';
   targetCtx.textBaseline = 'middle';
   targetCtx.fillText(ann.choiceLetter || '?', badgeX + badgeW / 2, badgeY + badgeH / 2);
-
-  // Yanında hedef ibaresi
-  if (isActive) {
-    targetCtx.fillStyle = '#10b981';
-    targetCtx.font = `bold ${Math.max(10, Math.round(11 * scale))}px "Plus Jakarta Sans", sans-serif`;
-    targetCtx.textAlign = 'left';
-    targetCtx.fillText('🎯 HEDEF ŞIK (Yanlış: [X] • Doğru: [M])', badgeX + badgeW + 8 * scale, badgeY + badgeH / 2);
-  } else {
-    targetCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    targetCtx.font = `${Math.max(9, Math.round(10 * scale))}px "Plus Jakarta Sans", sans-serif`;
-    targetCtx.textAlign = 'left';
-    targetCtx.fillText('Sırada Bekliyor', badgeX + badgeW + 6 * scale, badgeY + badgeH / 2);
-  }
 
   targetCtx.restore();
 }
@@ -1440,19 +1710,19 @@ function drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann) {
  */
 function drawChoiceTag(targetCtx, bx, by, scale, ann) {
   targetCtx.save();
-  const badgeH = Math.max(18, Math.round(20 * scale));
-  const badgeW = Math.max(24, Math.round(26 * scale));
-  const badgeX = bx + 6 * scale;
-  const badgeY = by + 6 * scale;
+  const badgeH = Math.max(16, Math.round(18 * scale));
+  const badgeW = Math.max(20, Math.round(22 * scale));
+  const badgeX = bx + 4 * scale;
+  const badgeY = by + 4 * scale;
 
   targetCtx.fillStyle = ann.type === 'wrong' ? '#ef4444' : '#22c55e';
   targetCtx.beginPath();
-  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 5 * scale);
+  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 4 * scale);
   else targetCtx.rect(badgeX, badgeY, badgeW, badgeH);
   targetCtx.fill();
 
   targetCtx.fillStyle = '#ffffff';
-  targetCtx.font = `bold ${Math.max(10, Math.round(12 * scale))}px "JetBrains Mono", monospace`;
+  targetCtx.font = `bold ${Math.max(9, Math.round(11 * scale))}px "JetBrains Mono", monospace`;
   targetCtx.textAlign = 'center';
   targetCtx.textBaseline = 'middle';
   targetCtx.fillText(ann.choiceLetter, badgeX + badgeW / 2, badgeY + badgeH / 2);
