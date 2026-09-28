@@ -1188,31 +1188,41 @@ async function startVideoRender() {
     mediaRecorder.start(200);
     audioSource.start(0);
 
-    const startTime = performance.now();
+    const startPerfTime = performance.now();
     const frameIntervalMs = 1000 / fps;
 
     DOM.renderStatusText.textContent = `Video işleniyor (${fps} FPS • ${targetW}x${targetH})...`;
 
-    // Kare Kare Çizim Döngüsü
-    let currentRenderTime = 0;
-    while (currentRenderTime <= totalDuration && !State.rendering.cancelled) {
-      // 1. Kareyi render et
-      drawFrame(renderCtx, currentRenderTime, true);
+    // Gerçek zamanlı senkronize çizim döngüsü:
+    // MediaRecorder ses ve video akışını gerçek zamanlı kaydettiği için,
+    // döngü tam olarak sesin gerçek süresi (totalDuration) boyunca devam etmelidir.
+    while (!State.rendering.cancelled) {
+      const elapsed = (performance.now() - startPerfTime) / 1000;
+
+      // 1. O andaki geçerli kareyi çiz
+      drawFrame(renderCtx, elapsed, true);
 
       // 2. Canlı önizleme ekranına yansıt
       previewCtx.clearRect(0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
       previewCtx.drawImage(renderCanvas, 0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
 
-      // 3. İlerleme çubuğunu güncelle
-      const percent = Math.min(100, Math.round((currentRenderTime / totalDuration) * 100));
+      // 3. İlerleme ve kalan süre göstergesi
+      const percent = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+      const remainingSec = Math.max(0, Math.ceil(totalDuration - elapsed));
+      const remM = Math.floor(remainingSec / 60).toString().padStart(2, '0');
+      const remS = Math.floor(remainingSec % 60).toString().padStart(2, '0');
+
       DOM.renderProgressBar.style.width = `${percent}%`;
       DOM.renderPercentText.textContent = `%${percent}`;
+      DOM.renderStatusText.textContent = `İşleniyor: ${formatTime(elapsed)} / ${formatTime(totalDuration)} (Kalan: ${remM}:${remS})`;
 
-      // Bir sonraki kare zamanı
-      currentRenderTime += 1 / fps;
+      // Ses tamamen bitti mi?
+      if (elapsed >= totalDuration) {
+        break;
+      }
 
-      // Tarayıcı döngüsünü tıkamamak için ufak bir bekleme
-      await new Promise(r => setTimeout(r, Math.max(1, frameIntervalMs / 4)));
+      // Kare hızına (30 / 60 FPS) göre bekle
+      await new Promise(r => setTimeout(r, frameIntervalMs));
     }
 
     if (State.rendering.cancelled) {
@@ -1221,6 +1231,9 @@ async function startVideoRender() {
       audioContext.close();
       return;
     }
+
+    // Sesin son hecesinin veya yankısının kesilmemesi için ufak bir pay bırak (400ms)
+    await new Promise(r => setTimeout(r, 400));
 
     DOM.renderStatusText.textContent = 'Son video dosyası paketleniyor...';
     mediaRecorder.stop();
