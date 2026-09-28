@@ -20,6 +20,21 @@ const State = {
     duration: 0,
     buffer: null,
   },
+  // Çoklu Vurgu Listesi (Doğru, Yanlış Şıklar ve Fosforlu Alt Çizgiler)
+  annotations: [], // Array of { id, label, type, shape, box: {x,y,width,height}, timestamp, color, opacity, borderWidth, borderRadius, glow, animType, animDuration, checkmark, crossmark }
+  activeAnnotationId: null,
+  currentToolType: 'correct', // 'correct' | 'wrong'
+  currentShape: 'rect', // 'rect' | 'ellipse' | 'underline'
+
+  // İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar)
+  retentionBar: {
+    enabled: true,
+    color: '#22c55e',
+    position: 'bottom', // 'bottom' | 'top'
+    height: 6,
+  },
+
+  // Aktif Seçili Kutu (Geriye dönük uyumluluk ve tutamaçlar için)
   box: {
     x: 0,
     y: 0,
@@ -28,7 +43,7 @@ const State = {
     active: false,
   },
   highlight: {
-    shape: 'rect', // 'rect' | 'ellipse'
+    shape: 'rect', // 'rect' | 'ellipse' | 'underline'
     color: '#22c55e',
     opacity: 0.30,
     borderWidth: 4,
@@ -36,7 +51,7 @@ const State = {
     borderRadius: 16,
     glow: true,
     animType: 'scale_glow', // 'scale_glow' | 'fade_pulse' | 'pop_in' | 'smooth_fade'
-    animDuration: 0.8, // seconds (daha belirgin ve akıcı)
+    animDuration: 0.8, // seconds
   },
   checkmark: {
     enabled: true,
@@ -81,10 +96,16 @@ const DOM = {
   resInfo: document.getElementById('canvas-resolution-info'),
   btnZoomFit: document.getElementById('btn-zoom-fit'),
 
-  // Tools
+  // Tools & Annotations
+  toolTypeCorrect: document.getElementById('tool-type-correct'),
+  toolTypeWrong: document.getElementById('tool-type-wrong'),
   toolShapeRect: document.getElementById('tool-shape-rect'),
   toolShapeEllipse: document.getElementById('tool-shape-ellipse'),
+  toolShapeUnderline: document.getElementById('tool-shape-underline'),
   btnClearBox: document.getElementById('btn-clear-box'),
+  annotationsBar: document.getElementById('annotations-bar'),
+  annotationsList: document.getElementById('annotations-list'),
+  btnAddAnnotation: document.getElementById('btn-add-annotation'),
 
   // Waveform & Audio
   btnAudioPlay: document.getElementById('btn-audio-play'),
@@ -93,6 +114,7 @@ const DOM = {
   audioCurrentTime: document.getElementById('audio-current-time'),
   audioTotalTime: document.getElementById('audio-total-time'),
   btnMarkTimestamp: document.getElementById('btn-mark-timestamp'),
+  btnMarkWrong: document.getElementById('btn-mark-wrong'),
   btnPreviewHighlight: document.getElementById('btn-preview-highlight'),
   badgeMarkedTime: document.getElementById('badge-marked-time'),
   waveformContainer: document.getElementById('waveform-container'),
@@ -128,6 +150,15 @@ const DOM = {
   cfgCheckmarkPos: document.getElementById('cfg-checkmark-pos'),
   cfgCheckmarkStyle: document.getElementById('cfg-checkmark-style'),
   checkmarkOptionsContainer: document.getElementById('checkmark-options-container'),
+
+  // Retention Bar Controls
+  cfgRetentionToggle: document.getElementById('cfg-retention-toggle'),
+  cfgRetentionColor: document.getElementById('cfg-retention-color'),
+  textRetentionColor: document.getElementById('text-retention-color'),
+  btnRetentionEyedropper: document.getElementById('btn-retention-eyedropper'),
+  cfgRetentionPos: document.getElementById('cfg-retention-pos'),
+  cfgRetentionHeight: document.getElementById('cfg-retention-height'),
+  textRetentionHeight: document.getElementById('text-retention-height'),
 
   // Timestamp manual
   inputTimestampManual: document.getElementById('input-timestamp-manual'),
@@ -384,14 +415,15 @@ function getCanvasCoordinates(e) {
 }
 
 // Ekrana göre ölçeklenmiş kutu
-function getDisplayBox() {
-  if (!State.box.active || !State.image.naturalWidth) return null;
+// Ekrana göre ölçeklenmiş kutu
+function getDisplayBox(box = State.box) {
+  if (!box || !box.active || !State.image.naturalWidth) return null;
   const scale = DOM.canvas.width / State.image.naturalWidth;
   return {
-    x: State.box.x * scale,
-    y: State.box.y * scale,
-    w: State.box.width * scale,
-    h: State.box.height * scale,
+    x: box.x * scale,
+    y: box.y * scale,
+    w: box.width * scale,
+    h: box.height * scale,
   };
 }
 
@@ -420,8 +452,7 @@ function hitTestHandle(pos) {
   return null;
 }
 
-function isInsideBox(pos) {
-  const b = getDisplayBox();
+function isInsideBox(pos, b = getDisplayBox()) {
   if (!b) return false;
   return pos.x >= b.x && pos.x <= b.x + b.w && pos.y >= b.y && pos.y <= b.y + b.h;
 }
@@ -436,13 +467,267 @@ function getCursorForHandle(h) {
   }
 }
 
+// ------------------------------------------
+// ÇOKLU VURGU YÖNETİMİ (ANNOTATIONS)
+// ------------------------------------------
+function getActiveAnnotation() {
+  return State.annotations.find(a => a.id === State.activeAnnotationId) || null;
+}
+
+function syncControlsWithActive() {
+  const ann = getActiveAnnotation();
+  if (!ann) return;
+
+  DOM.cfgColorFill.value = ann.color;
+  DOM.textColorFill.textContent = ann.color.toUpperCase();
+  DOM.cfgOpacity.value = Math.round(ann.opacity * 100);
+  DOM.textOpacity.textContent = `%${Math.round(ann.opacity * 100)}`;
+  DOM.cfgBorderWidth.value = ann.borderWidth;
+  DOM.textBorderWidth.textContent = `${ann.borderWidth}px`;
+  DOM.cfgBorderRadius.value = ann.borderRadius;
+  DOM.textBorderRadius.textContent = `${ann.borderRadius}px`;
+  DOM.cfgAnimType.value = ann.animType || 'scale_glow';
+  DOM.cfgAnimDuration.value = ann.animDuration || 0.8;
+  DOM.textAnimDuration.textContent = `${(ann.animDuration || 0.8).toFixed(1)}s`;
+  DOM.cfgGlowToggle.checked = !!ann.glow;
+  DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+  DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+
+  // Checkmark kontrolleri
+  if (ann.type === 'correct') {
+    DOM.cfgCheckmarkToggle.checked = !!(ann.checkmark && ann.checkmark.enabled);
+    if (DOM.checkmarkOptionsContainer) {
+      DOM.checkmarkOptionsContainer.style.display = ann.checkmark?.enabled ? 'grid' : 'none';
+    }
+  } else {
+    if (DOM.checkmarkOptionsContainer) {
+      DOM.checkmarkOptionsContainer.style.display = 'none';
+    }
+  }
+
+  // Tool butonlarının aktiflik durumunu güncelle
+  updateToolTypeButtonsUI(ann.type);
+  updateToolShapeButtonsUI(ann.shape);
+}
+
+function selectAnnotation(id) {
+  const ann = State.annotations.find(a => a.id === id);
+  if (!ann) return;
+  State.activeAnnotationId = id;
+  State.box = { ...ann.box, active: true };
+  State.timestamp = ann.timestamp;
+  State.highlight.color = ann.color;
+  State.highlight.shape = ann.shape;
+  State.highlight.opacity = ann.opacity;
+  State.highlight.borderWidth = ann.borderWidth;
+  State.highlight.borderRadius = ann.borderRadius;
+  State.highlight.glow = ann.glow;
+  State.highlight.animType = ann.animType;
+  State.highlight.animDuration = ann.animDuration;
+  State.currentToolType = ann.type;
+  State.currentShape = ann.shape;
+
+  syncControlsWithActive();
+  renderAnnotationsList();
+  renderCanvas();
+  updateFfmpegCommand();
+  updateRenderButtonState();
+  updateStepIndicator();
+}
+
+function deleteAnnotation(id) {
+  State.annotations = State.annotations.filter(a => a.id !== id);
+  if (State.activeAnnotationId === id) {
+    if (State.annotations.length > 0) {
+      selectAnnotation(State.annotations[State.annotations.length - 1].id);
+    } else {
+      State.activeAnnotationId = null;
+      State.box.active = false;
+      State.box.width = 0;
+      State.box.height = 0;
+    }
+  }
+  renderAnnotationsList();
+  renderCanvas();
+  updateFfmpegCommand();
+  updateRenderButtonState();
+  updateStepIndicator();
+}
+
+function renderAnnotationsList() {
+  if (!DOM.annotationsList) return;
+  DOM.annotationsList.innerHTML = '';
+
+  if (State.annotations.length === 0) {
+    DOM.annotationsList.innerHTML = `<span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın.</span>`;
+    return;
+  }
+
+  State.annotations.forEach((ann, index) => {
+    const isActive = ann.id === State.activeAnnotationId;
+    const item = document.createElement('div');
+    item.className = `flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium cursor-pointer transition-all border ${
+      isActive
+        ? 'bg-zinc-800 text-white border-emerald-500/80 shadow-md ring-1 ring-emerald-500/30'
+        : 'bg-zinc-950/80 text-zinc-400 hover:text-zinc-200 border-zinc-800 hover:border-zinc-700'
+    }`;
+
+    let iconHtml = '🟢';
+    if (ann.shape === 'underline') iconHtml = '🟡 🖊️';
+    else if (ann.type === 'wrong') iconHtml = '🔴 ✕';
+    else iconHtml = '🟢 ✓';
+
+    item.innerHTML = `
+      <span class="flex items-center gap-1">
+        <span>${iconHtml}</span>
+        <span>${ann.label || `Vurgu ${index + 1}`}</span>
+      </span>
+      <span class="font-mono text-[10px] text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">${formatTime(ann.timestamp)}</span>
+      <button type="button" class="btn-del-ann ml-1 text-zinc-500 hover:text-red-400 p-0.5 rounded transition-colors" title="Vurguyu Sil">
+        <i data-lucide="x" class="w-3 h-3"></i>
+      </button>
+    `;
+
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('.btn-del-ann')) {
+        e.stopPropagation();
+        deleteAnnotation(ann.id);
+        return;
+      }
+      selectAnnotation(ann.id);
+    });
+
+    DOM.annotationsList.appendChild(item);
+  });
+
+  if (window.lucide) {
+    lucide.createIcons({ root: DOM.annotationsList });
+  }
+}
+
+// Yeni Vurgu Ekle Butonu
+if (DOM.btnAddAnnotation) {
+  DOM.btnAddAnnotation.addEventListener('click', () => {
+    State.activeAnnotationId = null;
+    State.box.active = false;
+    State.box.width = 0;
+    State.box.height = 0;
+    renderAnnotationsList();
+    renderCanvas();
+  });
+}
+
+// Vurgu Türü & Şekil Butonları UI Güncelleme
+function updateToolTypeButtonsUI(type) {
+  if (!DOM.toolTypeCorrect || !DOM.toolTypeWrong) return;
+  if (type === 'correct') {
+    DOM.toolTypeCorrect.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
+    DOM.toolTypeWrong.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-red-400 flex items-center gap-1.5 transition-all';
+  } else {
+    DOM.toolTypeWrong.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-rose-600 text-white shadow-sm flex items-center gap-1.5 transition-all';
+    DOM.toolTypeCorrect.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-emerald-400 flex items-center gap-1.5 transition-all';
+  }
+}
+
+function updateToolShapeButtonsUI(shape) {
+  const btns = [
+    { el: DOM.toolShapeRect, shape: 'rect' },
+    { el: DOM.toolShapeEllipse, shape: 'ellipse' },
+    { el: DOM.toolShapeUnderline, shape: 'underline' }
+  ];
+
+  btns.forEach(b => {
+    if (!b.el) return;
+    if (b.shape === shape) {
+      if (shape === 'underline') {
+        b.el.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-amber-500 text-zinc-950 shadow-sm flex items-center gap-1.5 transition-all';
+      } else {
+        b.el.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
+      }
+    } else {
+      b.el.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5 transition-all';
+    }
+  });
+}
+
+function setToolType(type) {
+  State.currentToolType = type;
+  updateToolTypeButtonsUI(type);
+
+  const ann = getActiveAnnotation();
+  if (ann) {
+    ann.type = type;
+    ann.label = type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
+    if (ann.shape !== 'underline') {
+      ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
+      ann.checkmark.enabled = (type === 'correct');
+      ann.crossmark.enabled = (type === 'wrong');
+      DOM.cfgColorFill.value = ann.color;
+      DOM.textColorFill.textContent = ann.color.toUpperCase();
+    }
+    renderAnnotationsList();
+    renderCanvas();
+    updateFfmpegCommand();
+  }
+}
+
+function setToolShape(shape) {
+  State.currentShape = shape;
+  updateToolShapeButtonsUI(shape);
+
+  const ann = getActiveAnnotation();
+  if (ann) {
+    ann.shape = shape;
+    if (shape === 'underline') {
+      ann.label = 'Fosforlu Çizgi';
+      ann.color = '#facc15';
+      ann.opacity = 0.55;
+      ann.borderWidth = 0;
+      DOM.cfgColorFill.value = ann.color;
+      DOM.textColorFill.textContent = ann.color.toUpperCase();
+      DOM.cfgOpacity.value = 55;
+      DOM.textOpacity.textContent = '%55';
+    } else {
+      ann.label = ann.type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
+      if (ann.borderWidth === 0) ann.borderWidth = 4;
+      if (ann.color === '#facc15') {
+        ann.color = ann.type === 'correct' ? '#22c55e' : '#ef4444';
+        DOM.cfgColorFill.value = ann.color;
+        DOM.textColorFill.textContent = ann.color.toUpperCase();
+      }
+    }
+    renderAnnotationsList();
+    renderCanvas();
+    updateFfmpegCommand();
+  }
+}
+
+if (DOM.toolTypeCorrect) {
+  DOM.toolTypeCorrect.addEventListener('click', () => setToolType('correct'));
+}
+if (DOM.toolTypeWrong) {
+  DOM.toolTypeWrong.addEventListener('click', () => setToolType('wrong'));
+}
+if (DOM.toolShapeRect) {
+  DOM.toolShapeRect.addEventListener('click', () => setToolShape('rect'));
+}
+if (DOM.toolShapeEllipse) {
+  DOM.toolShapeEllipse.addEventListener('click', () => setToolShape('ellipse'));
+}
+if (DOM.toolShapeUnderline) {
+  DOM.toolShapeUnderline.addEventListener('click', () => setToolShape('underline'));
+}
+
+// ------------------------------------------
+// MOUSE & CANVAS ETKİLEŞİMİ (Çoklu Vurgu Uyumlu)
+// ------------------------------------------
 DOM.canvas.addEventListener('mousedown', (e) => {
   if (!State.image.element) return;
   const pos = getCanvasCoordinates(e);
-  const handle = hitTestHandle(pos);
 
+  // 1. Önce aktif kutunun tutamaçlarına tıklandı mı kontrol et
+  const handle = hitTestHandle(pos);
   if (handle) {
-    // Tutamaç ile boyutlandırma
     State.interaction.activeHandle = handle;
     State.interaction.startX = pos.x;
     State.interaction.startY = pos.y;
@@ -450,25 +735,57 @@ DOM.canvas.addEventListener('mousedown', (e) => {
     State.interaction.boxStartY = State.box.y;
     State.interaction.boxStartW = State.box.width;
     State.interaction.boxStartH = State.box.height;
-  } else if (isInsideBox(pos)) {
-    // Kutuyu taşıma
+    return;
+  }
+
+  // 2. Aktif kutunun içine tıklandı mı? (Taşıma)
+  if (isInsideBox(pos)) {
     State.interaction.isDragging = true;
     State.interaction.startX = pos.x;
     State.interaction.startY = pos.y;
     State.interaction.boxStartX = State.box.x;
     State.interaction.boxStartY = State.box.y;
-  } else {
-    // Yeni kutu çizme
-    const scale = State.image.naturalWidth / DOM.canvas.width;
-    State.interaction.isDrawing = true;
+    return;
+  }
+
+  // 3. Diğer mevcut vurgulardan birinin içine tıklandı mı?
+  const scale = DOM.canvas.width / State.image.naturalWidth;
+  let clickedExisting = null;
+  for (let i = State.annotations.length - 1; i >= 0; i--) {
+    const ann = State.annotations[i];
+    const ab = {
+      x: ann.box.x * scale,
+      y: ann.box.y * scale,
+      w: ann.box.width * scale,
+      h: ann.box.height * scale,
+    };
+    if (isInsideBox(pos, ab)) {
+      clickedExisting = ann;
+      break;
+    }
+  }
+
+  if (clickedExisting) {
+    selectAnnotation(clickedExisting.id);
+    State.interaction.isDragging = true;
     State.interaction.startX = pos.x;
     State.interaction.startY = pos.y;
-    State.box.x = pos.x * scale;
-    State.box.y = pos.y * scale;
-    State.box.width = 0;
-    State.box.height = 0;
-    State.box.active = true;
+    State.interaction.boxStartX = State.box.x;
+    State.interaction.boxStartY = State.box.y;
+    return;
   }
+
+  // 4. Boş bir alana tıklandı -> Yeni kutu çizimi başlat
+  const natScale = State.image.naturalWidth / DOM.canvas.width;
+  State.interaction.isDrawing = true;
+  State.interaction.startX = pos.x;
+  State.interaction.startY = pos.y;
+  State.box.x = pos.x * natScale;
+  State.box.y = pos.y * natScale;
+  State.box.width = 0;
+  State.box.height = 0;
+  State.box.active = true;
+  State.activeAnnotationId = null; // Henüz kaydedilmemiş yeni çizim
 });
 
 window.addEventListener('mousemove', (e) => {
@@ -491,15 +808,28 @@ window.addEventListener('mousemove', (e) => {
     if (h.includes('s')) nh += dy;
     if (h.includes('n')) { ny += dy; nh -= dy; }
 
-    // Ters dönme koruması
     if (nw > 10) { State.box.x = nx; State.box.width = nw; }
     if (nh > 10) { State.box.y = ny; State.box.height = nh; }
+
+    const ann = getActiveAnnotation();
+    if (ann) {
+      ann.box.x = State.box.x;
+      ann.box.y = State.box.y;
+      ann.box.width = State.box.width;
+      ann.box.height = State.box.height;
+    }
     renderCanvas();
   } else if (State.interaction.isDragging) {
     const dx = (pos.x - State.interaction.startX) * scale;
     const dy = (pos.y - State.interaction.startY) * scale;
     State.box.x = Math.max(0, Math.min(State.interaction.boxStartX + dx, State.image.naturalWidth - State.box.width));
     State.box.y = Math.max(0, Math.min(State.interaction.boxStartY + dy, State.image.naturalHeight - State.box.height));
+
+    const ann = getActiveAnnotation();
+    if (ann) {
+      ann.box.x = State.box.x;
+      ann.box.y = State.box.y;
+    }
     renderCanvas();
   } else if (State.interaction.isDrawing) {
     const curNatX = pos.x * scale;
@@ -513,7 +843,7 @@ window.addEventListener('mousemove', (e) => {
     State.box.height = Math.abs(curNatY - startNatY);
     renderCanvas();
   } else {
-    // Fare imleci güncelleme
+    // Fare imleci
     const handle = hitTestHandle(pos);
     if (handle) {
       DOM.canvas.style.cursor = getCursorForHandle(handle);
@@ -530,6 +860,51 @@ window.addEventListener('mouseup', () => {
     if (State.box.width < 10 || State.box.height < 10) {
       State.box.active = false;
     } else {
+      // Geçerli bir kutu çizildi -> Yeni Vurgu Olarak Ekle!
+      const isCorrect = State.currentToolType === 'correct';
+      const isUnderline = State.currentShape === 'underline';
+      const defaultColor = isUnderline ? '#facc15' : (isCorrect ? State.highlight.color : '#ef4444');
+      const defaultOpacity = isUnderline ? 0.55 : State.highlight.opacity;
+      const defaultBorder = isUnderline ? 0 : State.highlight.borderWidth;
+      const defaultRadius = State.highlight.borderRadius || 16;
+      const defaultGlow = State.highlight.glow !== undefined ? State.highlight.glow : true;
+      const defaultAnimType = State.highlight.animType || 'scale_glow';
+      const defaultAnimDuration = State.highlight.animDuration || 0.8;
+      const curTime = (wavesurfer && State.audio.duration > 0) ? wavesurfer.getCurrentTime() : 0.0;
+
+      const newAnn = {
+        id: 'ann_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
+        label: isUnderline ? 'Fosforlu Çizgi' : (isCorrect ? 'Doğru (✓)' : 'Yanlış (✕)'),
+        type: State.currentToolType,
+        shape: State.currentShape,
+        box: {
+          x: State.box.x,
+          y: State.box.y,
+          width: State.box.width,
+          height: State.box.height,
+        },
+        timestamp: curTime,
+        color: defaultColor,
+        opacity: defaultOpacity,
+        borderWidth: defaultBorder,
+        borderRadius: defaultRadius,
+        glow: defaultGlow,
+        animType: defaultAnimType,
+        animDuration: defaultAnimDuration,
+        checkmark: {
+          enabled: isCorrect && State.checkmark.enabled,
+          position: State.checkmark.position || 'right',
+          style: State.checkmark.style || 'badge',
+        },
+        crossmark: {
+          enabled: !isCorrect && !isUnderline,
+          position: 'right',
+          style: 'badge',
+        }
+      };
+
+      State.annotations.push(newAnn);
+      selectAnnotation(newAnn.id);
       updateStepIndicator();
     }
   }
@@ -541,27 +916,14 @@ window.addEventListener('mouseup', () => {
 });
 
 DOM.btnClearBox.addEventListener('click', () => {
-  State.box.active = false;
-  State.box.width = 0;
-  State.box.height = 0;
-  updateRenderButtonState();
-  updateStepIndicator();
-  renderCanvas();
-});
-
-// Şekil Seçimi (Dikdörtgen vs Elips)
-DOM.toolShapeRect.addEventListener('click', () => {
-  State.highlight.shape = 'rect';
-  DOM.toolShapeRect.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
-  DOM.toolShapeEllipse.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5 transition-all';
-  renderCanvas();
-});
-
-DOM.toolShapeEllipse.addEventListener('click', () => {
-  State.highlight.shape = 'ellipse';
-  DOM.toolShapeEllipse.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
-  DOM.toolShapeRect.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5 transition-all';
-  renderCanvas();
+  if (State.activeAnnotationId) {
+    deleteAnnotation(State.activeAnnotationId);
+  } else {
+    State.box.active = false;
+    State.box.width = 0;
+    State.box.height = 0;
+    renderCanvas();
+  }
 });
 
 // ==========================================
@@ -593,133 +955,151 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
     targetCtx.drawImage(State.image.element, 0, 0, canvasW, canvasH);
   }
 
-  if (!State.box.active) return;
-
-  const scale = canvasW / State.image.naturalWidth;
-  const bx = State.box.x * scale;
-  const by = State.box.y * scale;
-  const bw = State.box.width * scale;
-  const bh = State.box.height * scale;
-
-  // Vurgu görünürlüğü hesaplama
   const isPlayingAudio = State.playback.isPlaying;
   const isTestingAnim = State.playback.animTestStartTime !== null;
-  const hasReachedTimestamp = currentTime >= State.timestamp;
-
-  // Düzenleme modunda mıyız? (Ses çalmıyorsa ve render alınmıyorsa kutu düzenlenebilir görünür)
   const isEditMode = !isPlayingAudio && !isExporting && !isTestingAnim;
+  const scale = State.image.naturalWidth ? (canvasW / State.image.naturalWidth) : 1.0;
 
-  let animProgress = 1.0;
-  let showHighlight = false;
+  // 2. Tüm Vurguları Sırayla Çiz
+  for (const ann of State.annotations) {
+    const hasReached = currentTime >= ann.timestamp;
+    let showAnn = false;
+    let animProgress = 1.0;
 
-  if (isEditMode) {
-    // Düzenleme modunda her zaman göster
-    showHighlight = true;
-    animProgress = 1.0;
-  } else if (isTestingAnim) {
-    // Canlı animasyon testi yapılıyorsa
-    const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
-    if (elapsed <= State.highlight.animDuration) {
-      animProgress = Math.min(1.0, elapsed / State.highlight.animDuration);
-      showHighlight = true;
-    } else {
+    if (isEditMode) {
+      showAnn = true;
       animProgress = 1.0;
-      showHighlight = true;
+    } else if (isTestingAnim) {
+      const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
+      animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
+      showAnn = true;
+    } else if (hasReached) {
+      // Vurgu zamanı geldi ve video sonuna kadar sabit kalır!
+      const elapsed = currentTime - ann.timestamp;
+      animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
+      showAnn = true;
     }
-  } else if (hasReachedTimestamp) {
-    // Oynatma veya video çıktısında işaretlenen saniye geçildiyse
-    const elapsed = currentTime - State.timestamp;
-    animProgress = Math.min(1.0, elapsed / State.highlight.animDuration);
-    showHighlight = true;
+
+    if (!showAnn) continue;
+
+    const bx = ann.box.x * scale;
+    const by = ann.box.y * scale;
+    const bw = ann.box.width * scale;
+    const bh = ann.box.height * scale;
+
+    if (ann.shape === 'underline') {
+      // 5. Fosforlu Kalem / Altını Çizme Animasyonu
+      drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+    } else {
+      // Dikdörtgen veya Elips Vurgu
+      drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+
+      // Onay veya Çarpı İkonu Rozeti
+      if (ann.type === 'correct' && ann.checkmark?.enabled) {
+        drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+      } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
+        drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+      }
+    }
+
+    // Düzenleme modunda seçili ise tutamaçları çiz
+    if (isEditMode && ann.id === State.activeAnnotationId) {
+      drawEditHandles(targetCtx, bx, by, bw, bh);
+    }
   }
 
-  if (!showHighlight) {
-    // Henüz zamanı gelmedi - vurgu çizilmez
-    return;
+  // Henüz kaydedilmemiş bir çizim varsa (çizim anında)
+  if (isEditMode && !State.activeAnnotationId && State.box.active && State.box.width > 5) {
+    const bx = State.box.x * scale;
+    const by = State.box.y * scale;
+    const bw = State.box.width * scale;
+    const bh = State.box.height * scale;
+    drawEditHandles(targetCtx, bx, by, bw, bh);
   }
 
-  // Animasyon Skalası ve Opaklık Hesaplama (Göz alıcı ve belirgin dinamik)
+  // 3. İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar)
+  if (State.retentionBar.enabled) {
+    drawRetentionBar(targetCtx, currentTime, State.audio.duration);
+  }
+}
+
+/**
+ * Dikdörtgen veya Elips Şeklinde Vurgu Çizimi
+ */
+function drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
   let animScale = 1.0;
-  let animAlpha = State.highlight.opacity;
+  let animAlpha = ann.opacity;
   let glowPulse = 0;
 
-  if (State.highlight.animType === 'scale_glow') {
-    // Güçlü Scale-Up: 0.15'ten yaylanarak 1.15'e patlar ve 1.0'a oturur
-    const eased = easeOutBack(animProgress);
-    animScale = Math.max(0.05, Math.min(1.22, eased));
-    animAlpha = State.highlight.opacity * Math.min(1.0, animProgress * 2.2);
-    glowPulse = Math.max(0, 1.0 - animProgress);
-  } else if (State.highlight.animType === 'fade_pulse') {
-    // Yumuşak Fade + Çift Nabız (Pulse)
-    animScale = 1.0 + 0.14 * Math.sin(animProgress * Math.PI);
-    animAlpha = State.highlight.opacity * easeOutQuad(animProgress);
-    glowPulse = Math.sin(animProgress * Math.PI);
-  } else if (State.highlight.animType === 'pop_in') {
-    // Enerjik Pop-In
-    const eased = easeOutBack(animProgress);
-    animScale = Math.max(0.05, Math.min(1.25, eased));
-    animAlpha = State.highlight.opacity;
-    glowPulse = Math.max(0, 1.0 - animProgress);
-  } else {
-    // Sade Fade-In
-    animAlpha = State.highlight.opacity * animProgress;
+  if (!isEditMode) {
+    if (ann.animType === 'scale_glow') {
+      const eased = easeOutBack(animProgress);
+      animScale = Math.max(0.05, Math.min(1.22, eased));
+      animAlpha = ann.opacity * Math.min(1.0, animProgress * 2.2);
+      glowPulse = Math.max(0, 1.0 - animProgress);
+    } else if (ann.animType === 'fade_pulse') {
+      animScale = 1.0 + 0.14 * Math.sin(animProgress * Math.PI);
+      animAlpha = ann.opacity * easeOutQuad(animProgress);
+      glowPulse = Math.sin(animProgress * Math.PI);
+    } else if (ann.animType === 'pop_in') {
+      const eased = easeOutBack(animProgress);
+      animScale = Math.max(0.05, Math.min(1.25, eased));
+      animAlpha = ann.opacity;
+      glowPulse = Math.max(0, 1.0 - animProgress);
+    } else {
+      animAlpha = ann.opacity * animProgress;
+    }
   }
 
-  // Renk Değerleri
-  const hex = State.highlight.color;
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  const radius = State.highlight.borderRadius * scale;
+  const hex = ann.color || '#22c55e';
+  const r = parseInt(hex.slice(1, 3), 16) || 34;
+  const g = parseInt(hex.slice(3, 5), 16) || 197;
+  const b = parseInt(hex.slice(5, 7), 16) || 94;
+  const radius = (ann.borderRadius || 16) * scale;
   const centerX = bx + bw / 2;
   const centerY = by + bh / 2;
 
-  // Şekli Merkezden Büyütecek Transform Matrix
   targetCtx.save();
   targetCtx.translate(centerX, centerY);
   targetCtx.scale(animScale, animScale);
   targetCtx.translate(-centerX, -centerY);
 
-  // Parlama (Glow / Neon) Efekti
-  if (State.highlight.glow) {
-    targetCtx.shadowColor = State.highlight.color;
+  if (ann.glow) {
+    targetCtx.shadowColor = hex;
     targetCtx.shadowBlur = (14 + glowPulse * 24) * scale;
   } else {
     targetCtx.shadowBlur = 0;
   }
 
   targetCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${animAlpha})`;
-  targetCtx.strokeStyle = State.highlight.color;
-  targetCtx.lineWidth = State.highlight.borderWidth * scale;
+  targetCtx.strokeStyle = hex;
+  targetCtx.lineWidth = (ann.borderWidth || 4) * scale;
 
   targetCtx.beginPath();
-  if (State.highlight.shape === 'rect') {
-    // Yuvarlak Köşeli Dikdörtgen
+  if (ann.shape === 'rect') {
     if (targetCtx.roundRect) {
       targetCtx.roundRect(bx, by, bw, bh, radius);
     } else {
       drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
     }
   } else {
-    // Elips
     targetCtx.ellipse(centerX, centerY, bw / 2, bh / 2, 0, 0, 2 * Math.PI);
   }
   targetCtx.fill();
   targetCtx.stroke();
-
   targetCtx.restore();
 
-  // Dışa Doğru Yayılan Şok Dalgası (Expanding Shockwave Ring)
+  // Dışa Yayılan Şok Dalgası (Expanding Shockwave Ring)
   if (glowPulse > 0.02) {
     targetCtx.save();
     const shockExpand = (1.0 - glowPulse) * 22 * scale;
-    targetCtx.lineWidth = (State.highlight.borderWidth + 2) * scale;
+    targetCtx.lineWidth = ((ann.borderWidth || 4) + 2) * scale;
     targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.85 * glowPulse})`;
-    targetCtx.shadowColor = State.highlight.color;
+    targetCtx.shadowColor = hex;
     targetCtx.shadowBlur = 10 * scale;
 
     targetCtx.beginPath();
-    if (State.highlight.shape === 'rect') {
+    if (ann.shape === 'rect') {
       const rx = bx - shockExpand;
       const ry = by - shockExpand;
       const rw = bw + shockExpand * 2;
@@ -733,28 +1113,63 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
     targetCtx.stroke();
     targetCtx.restore();
   }
-
-  // Onay İşareti (Tik ✓) Rozetini Çiz
-  if (State.checkmark.enabled) {
-    drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode);
-  }
-
-  // Düzenleme modunda tutamaçları (handles) ve kesikli çizgiyi çiz
-  if (isEditMode) {
-    drawEditHandles(targetCtx, bx, by, bw, bh);
-  }
 }
 
 /**
- * Cevap anında beliren şık rozet ve el yazısı tarzı animasyonlu onay işareti (✓) çizer
+ * Fosforlu Kalem / El Yazısı Çizgisi (Handwritten Underline)
+ * Metnin tabanı boyunca soldan sağa gerçek bir fosforlu kalem gibi akar.
  */
-function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode) {
-  if (!State.checkmark.enabled) return;
+function drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
+  const hex = ann.color || '#facc15';
+  const r = parseInt(hex.slice(1, 3), 16) || 250;
+  const g = parseInt(hex.slice(3, 5), 16) || 204;
+  const b = parseInt(hex.slice(5, 7), 16) || 21;
+  const alpha = ann.opacity || 0.55;
 
-  const R = Math.max(14, Math.min(26, bh * 0.42)); // Rozet yarıçapı
+  const lineH = Math.max(8 * scale, Math.min(bh * 0.45, 20 * scale));
+  const lineY = by + bh - lineH * 0.5 - 2 * scale;
+  const startX = bx;
+  const totalW = bw;
+
+  const sweep = isEditMode ? 1.0 : easeOutQuad(animProgress);
+  const currentW = totalW * sweep;
+  if (currentW <= 1) return;
+
+  targetCtx.save();
+  targetCtx.beginPath();
+  targetCtx.lineCap = 'round';
+  targetCtx.lineWidth = lineH;
+  targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+
+  if (ann.glow) {
+    targetCtx.shadowColor = hex;
+    targetCtx.shadowBlur = 10 * scale;
+  }
+
+  targetCtx.moveTo(startX + lineH * 0.4, lineY);
+  targetCtx.lineTo(Math.max(startX + lineH * 0.4, startX + currentW - lineH * 0.4), lineY);
+  targetCtx.stroke();
+
+  // Kalem ucu parıltısı (animasyon akarken)
+  if (!isEditMode && animProgress < 0.98) {
+    targetCtx.fillStyle = '#ffffff';
+    targetCtx.beginPath();
+    targetCtx.arc(startX + currentW - lineH * 0.4, lineY, lineH * 0.35, 0, 2 * Math.PI);
+    targetCtx.shadowColor = '#ffffff';
+    targetCtx.shadowBlur = 8 * scale;
+    targetCtx.fill();
+  }
+  targetCtx.restore();
+}
+
+/**
+ * Doğru Seçenek için Animasyonlu Onay İşareti (✓) Rozeti
+ */
+function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
+  const R = Math.max(14, Math.min(26, bh * 0.42));
+  const pos = ann.checkmark?.position || 'right';
   let cx, cy;
 
-  const pos = State.checkmark.position;
   if (pos === 'right') {
     cx = bx + bw + R + 14 * scale;
     cy = by + bh / 2;
@@ -764,21 +1179,17 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
   } else if (pos === 'top_right') {
     cx = bx + bw + 4 * scale;
     cy = by - 4 * scale;
-  } else { // inside_right
+  } else {
     cx = bx + bw - R - 8 * scale;
     cy = by + bh / 2;
   }
 
-  // Animasyon faktörleri
   let badgeScale = 1.0;
   let strokeProgress = 1.0;
 
   if (!isEditMode) {
-    // Rozet girişi: animProgress 0.1 ile 0.65 arasında yaylanarak açılır
     const badgeRaw = Math.max(0, Math.min(1.0, (animProgress - 0.1) / 0.55));
     badgeScale = easeOutBack(badgeRaw);
-
-    // Çizgi çizilme: animProgress 0.25 ile 0.95 arasında el yazısı gibi çizilir
     strokeProgress = Math.max(0, Math.min(1.0, (animProgress - 0.25) / 0.70));
   }
 
@@ -788,27 +1199,24 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
   targetCtx.translate(cx, cy);
   targetCtx.scale(badgeScale, badgeScale);
 
-  const style = State.checkmark.style;
-  const greenHex = State.highlight.color;
+  const greenHex = ann.color || '#22c55e';
+  const style = ann.checkmark?.style || 'badge';
 
   if (style === 'badge') {
-    // 1. Daire Rozet (Canlı yeşil dolgu + beyaz kenarlık + neon aura)
     targetCtx.beginPath();
     targetCtx.arc(0, 0, R, 0, 2 * Math.PI);
     targetCtx.fillStyle = greenHex;
-    if (State.highlight.glow) {
+    if (ann.glow) {
       targetCtx.shadowColor = greenHex;
       targetCtx.shadowBlur = 12 * scale;
     }
     targetCtx.fill();
 
-    // Beyaz rozet kenarlığı
     targetCtx.strokeStyle = '#ffffff';
     targetCtx.lineWidth = Math.max(1.5, 2.5 * scale);
     targetCtx.stroke();
   }
 
-  // 2. Onay İşareti Çizgisi (✓)
   if (strokeProgress > 0.05) {
     const p0 = { x: -0.42 * R, y: -0.02 * R };
     const p1 = { x: -0.10 * R, y: 0.38 * R };
@@ -820,18 +1228,16 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
     targetCtx.lineWidth = Math.max(2.5, (style === 'badge' ? 3.5 : 4.5) * scale);
     targetCtx.strokeStyle = style === 'badge' ? '#ffffff' : greenHex;
 
-    if (style === 'plain' && State.highlight.glow) {
+    if (style === 'plain' && ann.glow) {
       targetCtx.shadowColor = greenHex;
       targetCtx.shadowBlur = 10 * scale;
     }
 
     if (strokeProgress <= 0.38) {
-      // Birinci kısa kol (P0 -> P1)
       const t = strokeProgress / 0.38;
       targetCtx.moveTo(p0.x, p0.y);
       targetCtx.lineTo(p0.x + (p1.x - p0.x) * t, p0.y + (p1.y - p0.y) * t);
     } else {
-      // Birinci kol tam + İkinci uzun kol (P1 -> P2)
       const t = (strokeProgress - 0.38) / 0.62;
       targetCtx.moveTo(p0.x, p0.y);
       targetCtx.lineTo(p1.x, p1.y);
@@ -840,6 +1246,111 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
     targetCtx.stroke();
   }
 
+  targetCtx.restore();
+}
+
+/**
+ * Yanlış Seçenek için Animasyonlu Kırmızı Çarpı İşareti (✕) Rozeti
+ */
+function drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
+  const R = Math.max(14, Math.min(26, bh * 0.42));
+  const cx = bx + bw + R + 14 * scale;
+  const cy = by + bh / 2;
+
+  let badgeScale = 1.0;
+  let strokeProgress = 1.0;
+
+  if (!isEditMode) {
+    const badgeRaw = Math.max(0, Math.min(1.0, (animProgress - 0.1) / 0.50));
+    badgeScale = easeOutBack(badgeRaw);
+    strokeProgress = Math.max(0, Math.min(1.0, (animProgress - 0.25) / 0.70));
+  }
+
+  if (badgeScale <= 0.01) return;
+
+  targetCtx.save();
+  targetCtx.translate(cx, cy);
+  targetCtx.scale(badgeScale, badgeScale);
+
+  const redHex = ann.color || '#ef4444';
+
+  // 1. Kırmızı Daire Rozet
+  targetCtx.beginPath();
+  targetCtx.arc(0, 0, R, 0, 2 * Math.PI);
+  targetCtx.fillStyle = redHex;
+  if (ann.glow) {
+    targetCtx.shadowColor = redHex;
+    targetCtx.shadowBlur = 14 * scale;
+  }
+  targetCtx.fill();
+
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(1.5, 2.5 * scale);
+  targetCtx.stroke();
+
+  // 2. Çarpı İşareti Çizgileri (✕)
+  if (strokeProgress > 0.05) {
+    const arm = 0.40 * R;
+
+    targetCtx.beginPath();
+    targetCtx.lineCap = 'round';
+    targetCtx.lineWidth = Math.max(2.5, 3.5 * scale);
+    targetCtx.strokeStyle = '#ffffff';
+
+    const p1Start = { x: -arm, y: -arm };
+    const p1End   = { x: arm, y: arm };
+    const p2Start = { x: arm, y: -arm };
+    const p2End   = { x: -arm, y: arm };
+
+    if (strokeProgress <= 0.50) {
+      const t = strokeProgress / 0.50;
+      targetCtx.moveTo(p1Start.x, p1Start.y);
+      targetCtx.lineTo(p1Start.x + (p1End.x - p1Start.x) * t, p1Start.y + (p1End.y - p1Start.y) * t);
+    } else {
+      targetCtx.moveTo(p1Start.x, p1Start.y);
+      targetCtx.lineTo(p1End.x, p1End.y);
+
+      const t = (strokeProgress - 0.50) / 0.50;
+      targetCtx.moveTo(p2Start.x, p2Start.y);
+      targetCtx.lineTo(p2Start.x + (p2End.x - p2Start.x) * t, p2Start.y + (p2End.y - p2Start.y) * t);
+    }
+    targetCtx.stroke();
+  }
+
+  targetCtx.restore();
+}
+
+/**
+ * İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar)
+ */
+function drawRetentionBar(targetCtx, currentTime, totalDuration) {
+  if (!State.retentionBar.enabled) return;
+  const dur = (totalDuration > 0) ? totalDuration : (State.audio.duration || 1);
+  const progress = Math.min(1.0, Math.max(0, currentTime / dur));
+  const canvasW = targetCtx.canvas.width;
+  const canvasH = targetCtx.canvas.height;
+  const barHeight = Math.max(3, Math.round(State.retentionBar.height * (canvasW / 1280)));
+  const y = State.retentionBar.position === 'top' ? 0 : (canvasH - barHeight);
+
+  targetCtx.save();
+  // Arka plan koyu kanal
+  targetCtx.fillStyle = 'rgba(15, 23, 42, 0.70)';
+  targetCtx.fillRect(0, y, canvasW, barHeight);
+
+  // İlerleme dolgusu
+  const currentW = canvasW * progress;
+  targetCtx.fillStyle = State.retentionBar.color;
+  targetCtx.shadowColor = State.retentionBar.color;
+  targetCtx.shadowBlur = 10;
+  targetCtx.fillRect(0, y, currentW, barHeight);
+
+  // Parlayan ön uç
+  if (progress > 0.01 && progress < 0.995) {
+    targetCtx.fillStyle = '#ffffff';
+    targetCtx.shadowColor = '#ffffff';
+    targetCtx.shadowBlur = 8;
+    targetCtx.fillRect(Math.max(0, currentW - 3), y, 3, barHeight);
+  }
   targetCtx.restore();
 }
 
@@ -884,8 +1395,8 @@ function renderCanvas() {
 
 // Canlı Animasyon Test Butonu
 DOM.btnPreviewAnimOnly.addEventListener('click', () => {
-  if (!State.box.active) {
-    alert('Önce görsel üzerinde bir cevap alanı çizin!');
+  if (State.annotations.length === 0 && !State.box.active) {
+    alert('Önce görsel üzerinde bir vurgu alanı çizin!');
     return;
   }
   State.playback.animTestStartTime = performance.now();
@@ -893,7 +1404,7 @@ DOM.btnPreviewAnimOnly.addEventListener('click', () => {
     if (State.playback.animTestStartTime === null) return;
     const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
     renderCanvas();
-    if (elapsed < State.highlight.animDuration + 0.3) {
+    if (elapsed < (State.highlight.animDuration || 0.8) + 0.3) {
       requestAnimationFrame(loop);
     } else {
       State.playback.animTestStartTime = null;
@@ -906,16 +1417,35 @@ DOM.btnPreviewAnimOnly.addEventListener('click', () => {
 // ==========================================
 // 6. ZAMAN DAMGASI (TIMESTAMP) BELİRLEME
 // ==========================================
-function setTimestamp(seconds) {
-  State.timestamp = Math.max(0, Math.min(seconds, State.audio.duration || 9999));
-  DOM.inputTimestampManual.value = State.timestamp.toFixed(2);
-  DOM.badgeMarkedTime.textContent = formatTime(State.timestamp);
+function setTimestamp(seconds, type = null) {
+  const ts = Math.max(0, Math.min(seconds, State.audio.duration || 9999));
+  State.timestamp = ts;
+
+  const ann = getActiveAnnotation();
+  if (ann) {
+    ann.timestamp = ts;
+    if (type) {
+      ann.type = type;
+      ann.label = type === 'correct' ? 'Doğru (✓)' : (ann.shape === 'underline' ? 'Fosforlu Çizgi' : 'Yanlış (✕)');
+      if (ann.shape !== 'underline') {
+        ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
+        ann.checkmark.enabled = (type === 'correct');
+        ann.crossmark.enabled = (type === 'wrong');
+        DOM.cfgColorFill.value = ann.color;
+        DOM.textColorFill.textContent = ann.color.toUpperCase();
+      }
+    }
+  }
+
+  DOM.inputTimestampManual.value = ts.toFixed(2);
+  DOM.badgeMarkedTime.textContent = formatTime(ts);
   DOM.badgeMarkedTime.classList.remove('bg-emerald-500/10', 'text-emerald-400');
-  DOM.badgeMarkedTime.classList.add('bg-emerald-500', 'text-zinc-950', 'neon-glow');
+  DOM.badgeMarkedTime.classList.add(type === 'wrong' ? 'bg-rose-500' : 'bg-emerald-500', 'text-zinc-950', 'neon-glow');
   setTimeout(() => {
     DOM.badgeMarkedTime.classList.remove('neon-glow');
   }, 2000);
 
+  renderAnnotationsList();
   updateFfmpegCommand();
   updateRenderButtonState();
   updateStepIndicator();
@@ -925,8 +1455,16 @@ function setTimestamp(seconds) {
 DOM.btnMarkTimestamp.addEventListener('click', () => {
   if (!wavesurfer) return;
   const current = wavesurfer.getCurrentTime();
-  setTimestamp(current);
+  setTimestamp(current, 'correct');
 });
+
+if (DOM.btnMarkWrong) {
+  DOM.btnMarkWrong.addEventListener('click', () => {
+    if (!wavesurfer) return;
+    const current = wavesurfer.getCurrentTime();
+    setTimestamp(current, 'wrong');
+  });
+}
 
 DOM.inputTimestampManual.addEventListener('change', (e) => {
   const val = parseFloat(e.target.value);
@@ -966,43 +1504,204 @@ DOM.btnAudioForward.addEventListener('click', () => {
 });
 
 // ==========================================
-// 7. VURGU VE STİL AYARLARI DİNLENİYOR
+// 7. AYARLARI HATIRLAMA (LOCALSTORAGE) & STİL DİNLEYİCİLERİ
 // ==========================================
+const SETTINGS_STORAGE_KEY = 'educlip_user_preferences_v1';
+
+function saveSettings() {
+  try {
+    const prefs = {
+      highlight: {
+        color: State.highlight.color,
+        opacity: State.highlight.opacity,
+        borderWidth: State.highlight.borderWidth,
+        borderRadius: State.highlight.borderRadius,
+        animType: State.highlight.animType,
+        animDuration: State.highlight.animDuration,
+        glow: State.highlight.glow,
+      },
+      checkmark: {
+        enabled: State.checkmark.enabled,
+        position: State.checkmark.position,
+        style: State.checkmark.style,
+      },
+      retentionBar: {
+        enabled: State.retentionBar.enabled,
+        color: State.retentionBar.color,
+        position: State.retentionBar.position,
+        height: State.retentionBar.height,
+      },
+      export: {
+        engine: DOM.exportEngine ? DOM.exportEngine.value : 'webcodecs',
+        resolution: DOM.exportResolution ? DOM.exportResolution.value : 'original',
+        fps: DOM.exportFps ? parseInt(DOM.exportFps.value, 10) : 30,
+      }
+    };
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch (e) {
+    console.warn('Ayarlar localStorage üzerine kaydedilemedi:', e);
+  }
+}
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    if (!raw) return;
+    const prefs = JSON.parse(raw);
+
+    if (prefs.highlight) {
+      if (prefs.highlight.color) {
+        State.highlight.color = prefs.highlight.color;
+        if (DOM.cfgColorFill) DOM.cfgColorFill.value = prefs.highlight.color;
+        if (DOM.textColorFill) DOM.textColorFill.textContent = prefs.highlight.color.toUpperCase();
+      }
+      if (typeof prefs.highlight.opacity === 'number') {
+        State.highlight.opacity = prefs.highlight.opacity;
+        if (DOM.cfgOpacity) {
+          DOM.cfgOpacity.value = Math.round(prefs.highlight.opacity * 100);
+          if (DOM.textOpacity) DOM.textOpacity.textContent = `%${Math.round(prefs.highlight.opacity * 100)}`;
+        }
+      }
+      if (typeof prefs.highlight.borderWidth === 'number') {
+        State.highlight.borderWidth = prefs.highlight.borderWidth;
+        if (DOM.cfgBorderWidth) {
+          DOM.cfgBorderWidth.value = prefs.highlight.borderWidth;
+          if (DOM.textBorderWidth) DOM.textBorderWidth.textContent = `${prefs.highlight.borderWidth}px`;
+        }
+      }
+      if (typeof prefs.highlight.borderRadius === 'number') {
+        State.highlight.borderRadius = prefs.highlight.borderRadius;
+        if (DOM.cfgBorderRadius) {
+          DOM.cfgBorderRadius.value = prefs.highlight.borderRadius;
+          if (DOM.textBorderRadius) DOM.textBorderRadius.textContent = `${prefs.highlight.borderRadius}px`;
+        }
+      }
+      if (prefs.highlight.animType) {
+        State.highlight.animType = prefs.highlight.animType;
+        if (DOM.cfgAnimType) DOM.cfgAnimType.value = prefs.highlight.animType;
+      }
+      if (typeof prefs.highlight.animDuration === 'number') {
+        State.highlight.animDuration = prefs.highlight.animDuration;
+        if (DOM.cfgAnimDuration) {
+          DOM.cfgAnimDuration.value = prefs.highlight.animDuration;
+          if (DOM.textAnimDuration) DOM.textAnimDuration.textContent = `${prefs.highlight.animDuration.toFixed(1)}s`;
+        }
+      }
+      if (typeof prefs.highlight.glow === 'boolean') {
+        State.highlight.glow = prefs.highlight.glow;
+        if (DOM.cfgGlowToggle) DOM.cfgGlowToggle.checked = prefs.highlight.glow;
+      }
+    }
+
+    if (prefs.checkmark) {
+      if (typeof prefs.checkmark.enabled === 'boolean') {
+        State.checkmark.enabled = prefs.checkmark.enabled;
+        if (DOM.cfgCheckmarkToggle) DOM.cfgCheckmarkToggle.checked = prefs.checkmark.enabled;
+        if (DOM.checkmarkOptionsContainer) {
+          DOM.checkmarkOptionsContainer.style.display = prefs.checkmark.enabled ? 'grid' : 'none';
+        }
+      }
+      if (prefs.checkmark.position) {
+        State.checkmark.position = prefs.checkmark.position;
+        if (DOM.cfgCheckmarkPos) DOM.cfgCheckmarkPos.value = prefs.checkmark.position;
+      }
+      if (prefs.checkmark.style) {
+        State.checkmark.style = prefs.checkmark.style;
+        if (DOM.cfgCheckmarkStyle) DOM.cfgCheckmarkStyle.value = prefs.checkmark.style;
+      }
+    }
+
+    if (prefs.retentionBar) {
+      if (typeof prefs.retentionBar.enabled === 'boolean') {
+        State.retentionBar.enabled = prefs.retentionBar.enabled;
+        if (DOM.cfgRetentionToggle) DOM.cfgRetentionToggle.checked = prefs.retentionBar.enabled;
+      }
+      if (prefs.retentionBar.color) {
+        State.retentionBar.color = prefs.retentionBar.color;
+        if (DOM.cfgRetentionColor) DOM.cfgRetentionColor.value = prefs.retentionBar.color;
+        if (DOM.textRetentionColor) DOM.textRetentionColor.textContent = prefs.retentionBar.color.toUpperCase();
+      }
+      if (prefs.retentionBar.position) {
+        State.retentionBar.position = prefs.retentionBar.position;
+        if (DOM.cfgRetentionPos) DOM.cfgRetentionPos.value = prefs.retentionBar.position;
+      }
+      if (typeof prefs.retentionBar.height === 'number') {
+        State.retentionBar.height = prefs.retentionBar.height;
+        if (DOM.cfgRetentionHeight) {
+          DOM.cfgRetentionHeight.value = prefs.retentionBar.height;
+          if (DOM.textRetentionHeight) DOM.textRetentionHeight.textContent = `${prefs.retentionBar.height}px`;
+        }
+      }
+    }
+
+    if (prefs.export) {
+      if (DOM.exportEngine && prefs.export.engine) DOM.exportEngine.value = prefs.export.engine;
+      if (DOM.exportResolution && prefs.export.resolution) DOM.exportResolution.value = prefs.export.resolution;
+      if (DOM.exportFps && prefs.export.fps) DOM.exportFps.value = prefs.export.fps;
+    }
+  } catch (e) {
+    console.warn('Kayıtlı ayarlar okunurken hata:', e);
+  }
+}
+
+// Stil Dinleyicileri
 DOM.cfgColorFill.addEventListener('input', (e) => {
   State.highlight.color = e.target.value;
   DOM.textColorFill.textContent = e.target.value.toUpperCase();
+  const ann = getActiveAnnotation();
+  if (ann) ann.color = e.target.value;
+  saveSettings();
   renderCanvas();
+  updateFfmpegCommand();
 });
 
 DOM.cfgOpacity.addEventListener('input', (e) => {
-  State.highlight.opacity = parseFloat(e.target.value);
+  State.highlight.opacity = parseFloat(e.target.value) / 100;
   DOM.textOpacity.textContent = `%${Math.round(State.highlight.opacity * 100)}`;
+  const ann = getActiveAnnotation();
+  if (ann) ann.opacity = State.highlight.opacity;
+  saveSettings();
   renderCanvas();
 });
 
 DOM.cfgBorderWidth.addEventListener('input', (e) => {
   State.highlight.borderWidth = parseInt(e.target.value, 10);
   DOM.textBorderWidth.textContent = `${State.highlight.borderWidth}px`;
+  const ann = getActiveAnnotation();
+  if (ann) ann.borderWidth = State.highlight.borderWidth;
+  saveSettings();
   renderCanvas();
 });
 
 DOM.cfgBorderRadius.addEventListener('input', (e) => {
   State.highlight.borderRadius = parseInt(e.target.value, 10);
   DOM.textBorderRadius.textContent = `${State.highlight.borderRadius}px`;
+  const ann = getActiveAnnotation();
+  if (ann) ann.borderRadius = State.highlight.borderRadius;
+  saveSettings();
   renderCanvas();
 });
 
 DOM.cfgAnimType.addEventListener('change', (e) => {
   State.highlight.animType = e.target.value;
+  const ann = getActiveAnnotation();
+  if (ann) ann.animType = e.target.value;
+  saveSettings();
 });
 
 DOM.cfgAnimDuration.addEventListener('input', (e) => {
   State.highlight.animDuration = parseFloat(e.target.value);
   DOM.textAnimDuration.textContent = `${State.highlight.animDuration.toFixed(1)}s`;
+  const ann = getActiveAnnotation();
+  if (ann) ann.animDuration = State.highlight.animDuration;
+  saveSettings();
 });
 
 DOM.cfgGlowToggle.addEventListener('change', (e) => {
   State.highlight.glow = e.target.checked;
+  const ann = getActiveAnnotation();
+  if (ann) ann.glow = e.target.checked;
+  saveSettings();
   renderCanvas();
 });
 
@@ -1012,18 +1711,90 @@ DOM.cfgCheckmarkToggle.addEventListener('change', (e) => {
   if (DOM.checkmarkOptionsContainer) {
     DOM.checkmarkOptionsContainer.style.display = e.target.checked ? 'grid' : 'none';
   }
+  const ann = getActiveAnnotation();
+  if (ann && ann.checkmark) ann.checkmark.enabled = e.target.checked;
+  saveSettings();
   renderCanvas();
 });
 
 DOM.cfgCheckmarkPos.addEventListener('change', (e) => {
   State.checkmark.position = e.target.value;
+  const ann = getActiveAnnotation();
+  if (ann && ann.checkmark) ann.checkmark.position = e.target.value;
+  saveSettings();
   renderCanvas();
 });
 
 DOM.cfgCheckmarkStyle.addEventListener('change', (e) => {
   State.checkmark.style = e.target.value;
+  const ann = getActiveAnnotation();
+  if (ann && ann.checkmark) ann.checkmark.style = e.target.value;
+  saveSettings();
   renderCanvas();
 });
+
+// Retention Bar Dinleyicileri & Damlalık (EyeDropper)
+function setRetentionColor(hex) {
+  State.retentionBar.color = hex;
+  if (DOM.cfgRetentionColor) DOM.cfgRetentionColor.value = hex;
+  if (DOM.textRetentionColor) DOM.textRetentionColor.textContent = hex.toUpperCase();
+  saveSettings();
+  renderCanvas();
+}
+
+if (DOM.cfgRetentionToggle) {
+  DOM.cfgRetentionToggle.addEventListener('change', (e) => {
+    State.retentionBar.enabled = e.target.checked;
+    saveSettings();
+    renderCanvas();
+  });
+}
+
+if (DOM.cfgRetentionColor) {
+  DOM.cfgRetentionColor.addEventListener('input', (e) => {
+    setRetentionColor(e.target.value);
+  });
+}
+
+if (DOM.btnRetentionEyedropper) {
+  DOM.btnRetentionEyedropper.addEventListener('click', async () => {
+    if (window.EyeDropper) {
+      try {
+        const eyeDropper = new window.EyeDropper();
+        const result = await eyeDropper.open();
+        if (result && result.sRGBHex) {
+          setRetentionColor(result.sRGBHex);
+        }
+      } catch (err) {
+        console.log('EyeDropper iptal edildi');
+      }
+    } else {
+      DOM.cfgRetentionColor.click();
+    }
+  });
+}
+
+if (DOM.cfgRetentionPos) {
+  DOM.cfgRetentionPos.addEventListener('change', (e) => {
+    State.retentionBar.position = e.target.value;
+    saveSettings();
+    renderCanvas();
+  });
+}
+
+if (DOM.cfgRetentionHeight) {
+  DOM.cfgRetentionHeight.addEventListener('input', (e) => {
+    State.retentionBar.height = parseInt(e.target.value, 10);
+    if (DOM.textRetentionHeight) DOM.textRetentionHeight.textContent = `${State.retentionBar.height}px`;
+    saveSettings();
+    renderCanvas();
+  });
+}
+
+// Export Ayarları Dinleyicileri
+if (DOM.exportEngine) DOM.exportEngine.addEventListener('change', saveSettings);
+if (DOM.exportResolution) DOM.exportResolution.addEventListener('change', saveSettings);
+if (DOM.exportFps) DOM.exportFps.addEventListener('change', saveSettings);
 
 // ==========================================
 // 8. KLAVYE KISAYOLLARI
@@ -1038,10 +1809,24 @@ window.addEventListener('keydown', (e) => {
   } else if (e.key === 'm' || e.key === 'M') {
     e.preventDefault();
     if (wavesurfer && State.audio.duration > 0) {
-      setTimestamp(wavesurfer.getCurrentTime());
+      setTimestamp(wavesurfer.getCurrentTime(), 'correct');
     }
+  } else if (e.key === 'x' || e.key === 'X') {
+    e.preventDefault();
+    if (wavesurfer && State.audio.duration > 0) {
+      setTimestamp(wavesurfer.getCurrentTime(), 'wrong');
+    }
+  } else if (e.key === '1') {
+    setToolType('correct');
+  } else if (e.key === '2') {
+    setToolType('wrong');
+  } else if (e.key === '3') {
+    setToolShape('underline');
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
-    if (State.box.active) {
+    if (State.activeAnnotationId) {
+      e.preventDefault();
+      deleteAnnotation(State.activeAnnotationId);
+    } else if (State.box.active) {
       e.preventDefault();
       DOM.btnClearBox.click();
     }
@@ -1056,6 +1841,11 @@ window.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowRight') State.box.x = Math.min(State.image.naturalWidth - State.box.width, State.box.x + step);
     if (e.key === 'ArrowUp') State.box.y = Math.max(0, State.box.y - step);
     if (e.key === 'ArrowDown') State.box.y = Math.min(State.image.naturalHeight - State.box.height, State.box.y + step);
+    const ann = getActiveAnnotation();
+    if (ann) {
+      ann.box.x = State.box.x;
+      ann.box.y = State.box.y;
+    }
     renderCanvas();
   }
 });
@@ -1498,20 +2288,35 @@ DOM.btnCloseRenderModal.addEventListener('click', () => {
 // 10. FFMPEG CLI KOMUT ÜRETİCİ
 // ==========================================
 function updateFfmpegCommand() {
-  if (!State.image.naturalWidth || !State.box.active) {
+  const activeList = State.annotations.length > 0 ? State.annotations : (State.box.active ? [{
+    box: State.box,
+    timestamp: State.timestamp,
+    color: State.highlight.color,
+    shape: State.highlight.shape
+  }] : []);
+
+  if (!State.image.naturalWidth || activeList.length === 0) {
     DOM.ffmpegCommandText.textContent = '# Lütfen önce soru görselini yükleyin ve alanı belirleyin.';
     return;
   }
 
-  const bx = Math.round(State.box.x);
-  const by = Math.round(State.box.y);
-  const bw = Math.round(State.box.width);
-  const bh = Math.round(State.box.height);
-  const ts = State.timestamp.toFixed(2);
-  const hex = State.highlight.color.replace('#', '0x');
+  const filters = activeList.map(ann => {
+    const bx = Math.round(ann.box.x);
+    const by = Math.round(ann.box.y);
+    const bw = Math.round(ann.box.width);
+    const bh = Math.round(ann.box.height);
+    const ts = (ann.timestamp || 0).toFixed(2);
+    const hex = (ann.color || '#22c55e').replace('#', '0x');
 
-  const cmd = `ffmpeg -loop 1 -i soru.png -i ses.mp3 -filter_complex "[0:v]drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}@0.35:t=fill:enable='gte(t,${ts})',drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}:t=4:enable='gte(t,${ts})'[v]" -map "[v]" -map 1:a -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -y cikti.mp4`;
+    if (ann.shape === 'underline') {
+      const lineH = Math.max(8, Math.round(bh * 0.35));
+      const lineY = Math.round(by + bh - lineH);
+      return `drawbox=x=${bx}:y=${lineY}:w=${bw}:h=${lineH}:color=${hex}@0.6:t=fill:enable='gte(t,${ts})'`;
+    }
+    return `drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}@0.35:t=fill:enable='gte(t,${ts})',drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}:t=4:enable='gte(t,${ts})'`;
+  }).join(',');
 
+  const cmd = `ffmpeg -loop 1 -i soru.png -i ses.mp3 -filter_complex "[0:v]${filters}[v]" -map "[v]" -map 1:a -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest -y cikti.mp4`;
   DOM.ffmpegCommandText.textContent = cmd;
 }
 
@@ -1530,7 +2335,7 @@ DOM.btnCopyFfmpegText.addEventListener('click', () => {
 // 11. ÖRNEK DEMO YÜKLEYİCİ (1-TIK TEST)
 // ==========================================
 DOM.btnLoadDemo.addEventListener('click', () => {
-  // 1. Örnek Soru Görseli Üret (1920x1080 Yüksek Çözünürlüklü Matematik/Geometri Sorusu)
+  // 1. Örnek Soru Görseli Üret (1600x1000 Yüksek Çözünürlüklü Matematik/Geometri Sorusu)
   const demoCanvas = document.createElement('canvas');
   demoCanvas.width = 1600;
   demoCanvas.height = 1000;
@@ -1606,18 +2411,76 @@ DOM.btnLoadDemo.addEventListener('click', () => {
     const imgFile = new File([imgBlob], 'ornek_geometri_sorusu.png', { type: 'image/png' });
     handleImageUpload(imgFile);
 
-    // Otomatik C şıkkını bounding box olarak işaretle
+    // 3 Farklı Vurguyu Otomatik Ekle:
+    // 1. Fosforlu Sarı Alt Çizgi (Soru öncülü) -> 0.80 saniye
+    // 2. Yanlış Şıkkı Eleme (A Şıkkı Kırmızı + ✕) -> 2.20 saniye
+    // 3. Doğru Şıkkı Vurgulama (C Şıkkı Yeşil + ✓) -> 3.80 saniye
     setTimeout(() => {
-      State.box = {
-        x: 120,
-        y: 625,
-        width: 620,
-        height: 60,
-        active: true,
-      };
-      setTimestamp(2.50); // 2.50 saniyede vurgu patlasın
-      renderCanvas();
-    }, 300);
+      State.annotations = [
+        {
+          id: 'demo_ann_1',
+          label: 'Fosforlu Çizgi',
+          type: 'correct',
+          shape: 'underline',
+          box: { x: 135, y: 310, width: 620, height: 48 },
+          timestamp: 0.80,
+          color: '#facc15',
+          opacity: 0.55,
+          borderWidth: 0,
+          borderRadius: 16,
+          glow: true,
+          animType: 'scale_glow',
+          animDuration: 0.8,
+          checkmark: { enabled: false },
+          crossmark: { enabled: false }
+        },
+        {
+          id: 'demo_ann_2',
+          label: 'Yanlış (A Şıkkı)',
+          type: 'wrong',
+          shape: 'rect',
+          box: { x: 125, y: 470, width: 220, height: 55 },
+          timestamp: 2.20,
+          color: '#ef4444',
+          opacity: 0.30,
+          borderWidth: 4,
+          borderRadius: 14,
+          glow: true,
+          animType: 'scale_glow',
+          animDuration: 0.7,
+          checkmark: { enabled: false },
+          crossmark: { enabled: true, position: 'right', style: 'badge' }
+        },
+        {
+          id: 'demo_ann_3',
+          label: 'Doğru (C Şıkkı)',
+          type: 'correct',
+          shape: 'rect',
+          box: { x: 125, y: 630, width: 640, height: 60 },
+          timestamp: 3.80,
+          color: '#22c55e',
+          opacity: 0.30,
+          borderWidth: 4,
+          borderRadius: 16,
+          glow: true,
+          animType: 'scale_glow',
+          animDuration: 0.8,
+          checkmark: { enabled: true, position: 'right', style: 'badge' },
+          crossmark: { enabled: false }
+        }
+      ];
+
+      // Retention Bar Aktif ve Alt tarafta yeşil
+      State.retentionBar.enabled = true;
+      State.retentionBar.color = '#22c55e';
+      State.retentionBar.position = 'bottom';
+      State.retentionBar.height = 6;
+      if (DOM.cfgRetentionToggle) DOM.cfgRetentionToggle.checked = true;
+      if (DOM.cfgRetentionColor) DOM.cfgRetentionColor.value = '#22c55e';
+      if (DOM.textRetentionColor) DOM.textRetentionColor.textContent = '#22C55E';
+
+      selectAnnotation('demo_ann_3');
+    }, 400);
   });
 
   // 2. Demo Ses Dosyası Üret (Eğitici Synth Audio: 6 saniye süren ses)
@@ -1698,7 +2561,8 @@ function bufferToWave(abuffer, len) {
 
 // Sıfırla Butonu
 DOM.btnResetAll.addEventListener('click', () => {
-  if (confirm('Tüm yüklenen dosyaları ve ayarları sıfırlamak istiyor musunuz?')) {
+  if (confirm('Tüm yüklenen dosyaları ve özel stil ayarlarınızı sıfırlamak istiyor musunuz?')) {
+    localStorage.removeItem(SETTINGS_STORAGE_KEY);
     location.reload();
   }
 });
@@ -1714,5 +2578,6 @@ function formatTime(sec) {
 
 // Başlangıç Kurulumu
 window.addEventListener('DOMContentLoaded', () => {
+  loadSettings();
   initWaveSurfer();
 });

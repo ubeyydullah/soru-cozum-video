@@ -110,12 +110,23 @@
       <!-- Canvas Araç Çubuğu -->
       <div class="flex items-center justify-between bg-zinc-900/80 border border-zinc-800/80 rounded-xl px-4 py-2 text-xs">
         <div class="flex items-center gap-3">
-          <span class="text-zinc-400 font-medium flex items-center gap-1.5">
-            <i data-lucide="crop" class="w-4 h-4 text-emerald-400"></i>
-            <span>Vurgu Çizimi:</span>
-          </span>
+          <!-- Vurgu Türü Seçici (Doğru vs Yanlış) -->
           <div class="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
-            <button id="tool-shape-rect" class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all">
+            <button id="tool-type-correct" class="px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all">
+              <i data-lucide="check" class="w-3.5 h-3.5"></i>
+              <span>🟢 Doğru (✓)</span>
+            </button>
+            <button id="tool-type-wrong" class="px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-red-400 flex items-center gap-1.5 transition-all">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+              <span>🔴 Yanlış Eleme (✕)</span>
+            </button>
+          </div>
+
+          <span class="h-4 w-px bg-zinc-800"></span>
+
+          <!-- Şekil Seçici (Dikdörtgen, Elips, Fosforlu Çizgi) -->
+          <div class="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800">
+            <button id="tool-shape-rect" class="px-2.5 py-1 rounded text-xs font-semibold bg-zinc-800 text-white shadow-sm flex items-center gap-1.5 transition-all">
               <i data-lucide="square" class="w-3.5 h-3.5"></i>
               <span>Dikdörtgen</span>
             </button>
@@ -123,13 +134,17 @@
               <i data-lucide="circle" class="w-3.5 h-3.5"></i>
               <span>Elips</span>
             </button>
+            <button id="tool-shape-underline" class="px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-yellow-400 flex items-center gap-1.5 transition-all" title="Fosforlu Kalemle Altını Çizme">
+              <i data-lucide="highlighter" class="w-3.5 h-3.5"></i>
+              <span>Fosforlu Çizgi</span>
+            </button>
           </div>
 
           <span class="h-4 w-px bg-zinc-800"></span>
 
-          <button id="btn-clear-box" class="text-zinc-400 hover:text-red-400 flex items-center gap-1 transition-colors" title="Seçili alanı sil (Del)">
+          <button id="btn-clear-box" class="text-zinc-400 hover:text-red-400 flex items-center gap-1 transition-colors" title="Seçili vurguyu sil (Del)">
             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-            <span>Alanı Sil</span>
+            <span>Vurguyu Sil</span>
           </button>
         </div>
 
@@ -166,7 +181,28 @@
         <!-- Canlı Koordinat & İpucu Rozeti -->
         <div id="canvas-hint" class="hidden absolute top-3 left-3 bg-zinc-900/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-zinc-700/80 text-[11px] text-zinc-300 shadow-lg pointer-events-none flex items-center gap-2">
           <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-          <span>Doğru cevabın üzerine dikdörtgen/elips çizmek için fareyi basılı tutup sürükleyin.</span>
+          <span>İşaretlemek istediğiniz şıkkın üzerine fareyle kutu/çizgi çizin.</span>
+        </div>
+      </div>
+
+      <!-- Eklenen Vurgular Listesi (Çoklu Şık & Zaman Çizelgesi) -->
+      <div id="annotations-bar" class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs shadow-md">
+        <div class="flex items-center gap-2 overflow-x-auto py-0.5">
+          <span class="text-zinc-400 font-semibold flex items-center gap-1.5 flex-shrink-0">
+            <i data-lucide="layers" class="w-4 h-4 text-emerald-400"></i>
+            <span>Vurgu Katmanları:</span>
+          </span>
+          <div id="annotations-list" class="flex items-center gap-2">
+            <!-- Dinamik Şık Rozetleri -->
+            <span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın.</span>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 flex-shrink-0">
+          <button id="btn-add-annotation" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition-all shadow-sm">
+            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+            <span>+ Yeni Vurgu Ekle</span>
+          </button>
         </div>
       </div>
 
@@ -197,18 +233,26 @@
             </div>
           </div>
 
-          <!-- KRİTİK BUTON: Zaman Damgasını İşaretle -->
+          <!-- KRİTİK BUTONLAR: Doğru ve Yanlış Şık Zamanı -->
           <div class="flex items-center gap-2">
-            <button id="btn-mark-timestamp" class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 shadow-md shadow-emerald-950 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
-              <i data-lucide="flag" class="w-4 h-4 fill-current"></i>
-              <span>Şu Anı İşaretle (Cevap Anı)</span>
-              <kbd class="ml-1 bg-zinc-900/80 text-emerald-300 px-1.5 py-0.5 rounded text-[10px] font-mono">M</kbd>
+            <!-- Doğru Şıkkı İşaretle -->
+            <button id="btn-mark-timestamp" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 shadow-md shadow-emerald-950 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Doğru cevabın açıklandığı anı kaydeder">
+              <i data-lucide="check-circle" class="w-4 h-4 fill-current"></i>
+              <span>Doğru (✓) İşaretle</span>
+              <kbd class="ml-1 bg-zinc-900/80 text-emerald-300 px-1 py-0.5 rounded text-[10px] font-mono">M</kbd>
             </button>
 
-            <!-- Vurgu Anını Önizle -->
-            <button id="btn-preview-highlight" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 transition-all disabled:opacity-40" disabled title="Cevap anından 1.5 saniye önce başlatır">
+            <!-- Yanlış Şıkkı / Elemeyi İşaretle -->
+            <button id="btn-mark-wrong" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Yanlış seçeneğin elendiği anı kaydeder">
+              <i data-lucide="x-circle" class="w-4 h-4 text-rose-400"></i>
+              <span>Yanlış (✕) Ele</span>
+              <kbd class="ml-1 bg-zinc-900 text-rose-300 px-1 py-0.5 rounded text-[10px] font-mono">X</kbd>
+            </button>
+
+            <!-- Vurguları Test Et -->
+            <button id="btn-preview-highlight" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 transition-all disabled:opacity-40" disabled title="İlk vurgudan 1.5 saniye önce başlatır">
               <i data-lucide="eye" class="w-4 h-4 text-emerald-400"></i>
-              <span>Vurguyu Test Et</span>
+              <span>Önizle</span>
             </button>
           </div>
         </div>
@@ -290,7 +334,8 @@
         <h2 class="text-sm font-bold text-zinc-200 flex items-center justify-between">
           <span class="flex items-center gap-2">
             <i data-lucide="palette" class="w-4 h-4 text-emerald-400"></i>
-            <span>2. Yeşil Vurgu & Animasyon</span>
+            <span>2. Vurgu & Animasyon</span>
+            <span class="text-[10px] font-normal text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20" title="Yaptığınız renk, kalınlık ve efekt ayarları tarayıcıda otomatik saklanır">💾 Otomatik Kaydedilir</span>
           </span>
           <button id="btn-preview-anim-only" class="text-[11px] text-emerald-400 hover:text-emerald-300 font-semibold flex items-center gap-1 transition-colors">
             <i data-lucide="play" class="w-3 h-3 fill-current"></i> Canlı Önizle
@@ -434,12 +479,60 @@
         </div>
       </div>
 
-      <!-- 4. Video Render & Dışa Aktar -->
+      <!-- 4. İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar) -->
+      <div class="bg-zinc-900/80 border border-zinc-800/80 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-bold text-zinc-200 flex items-center gap-2">
+            <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+            <span>4. İlerleme Çubuğu (Retention)</span>
+            <span class="text-[10px] font-normal text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20" title="Retention bar ayarları tarayıcıda otomatik saklanır">💾 Otomatik Kaydedilir</span>
+          </h2>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" id="cfg-retention-toggle" checked class="sr-only peer">
+            <div class="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+          </label>
+        </div>
+
+        <div id="retention-options-container" class="space-y-2.5 text-xs">
+          <!-- Renk Seçici ve Damlalık (EyeDropper) -->
+          <div>
+            <label class="block text-zinc-400 mb-1 text-[11px] font-medium">Çubuk Rengi & Damlalık</label>
+            <div class="flex items-center gap-2 bg-zinc-950 p-1.5 rounded-lg border border-zinc-800">
+              <input type="color" id="cfg-retention-color" value="#22c55e" class="w-7 h-7 rounded border-0 cursor-pointer bg-transparent">
+              <span id="text-retention-color" class="font-mono text-[11px] text-zinc-300 uppercase flex-1">#22C55E</span>
+              <button id="btn-retention-eyedropper" type="button" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-emerald-400 hover:text-emerald-300 transition-colors flex items-center gap-1.5 text-[11px] font-medium" title="Ekrandan Renk Seç (Damlalık)">
+                <i data-lucide="pipette" class="w-3.5 h-3.5"></i>
+                <span>Damlalık</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Konum ve Kalınlık -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-zinc-400 mb-1 text-[11px] font-medium">Konum</label>
+              <select id="cfg-retention-pos" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500 font-medium">
+                <option value="bottom" selected>En Alt (Reels/Shorts)</option>
+                <option value="top">En Üst</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-zinc-400 mb-1 text-[11px] font-medium">Kalınlık</label>
+              <div class="flex items-center gap-2 bg-zinc-950 px-2 py-1.5 rounded-lg border border-zinc-800">
+                <input type="range" id="cfg-retention-height" min="3" max="14" step="1" value="6" class="w-full">
+                <span id="text-retention-height" class="font-mono text-[11px] text-zinc-300 font-bold w-6 text-right">6px</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. Video Çıktısı (Export) -->
       <div class="bg-gradient-to-b from-zinc-900 to-zinc-950 border border-emerald-500/30 rounded-2xl p-4 flex flex-col gap-3.5 shadow-xl shadow-emerald-950/20">
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-bold text-zinc-100 flex items-center gap-2">
             <i data-lucide="film" class="w-4 h-4 text-emerald-400"></i>
-            <span>4. Video Çıktısı (Export)</span>
+            <span>5. Video Çıktısı (Export)</span>
           </h2>
           <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">MP4 / 60 FPS</span>
         </div>
@@ -557,8 +650,20 @@
           <kbd class="px-2 py-1 bg-zinc-950 border border-zinc-700 rounded font-mono text-emerald-400">Boşluk (Space)</kbd>
         </div>
         <div class="flex items-center justify-between py-1.5 border-b border-zinc-800/80">
-          <span class="text-zinc-300">Cevap Anını İşaretle (Timestamp)</span>
+          <span class="text-zinc-300">Doğru Şıkkı İşaretle (✓)</span>
           <kbd class="px-2 py-1 bg-zinc-950 border border-zinc-700 rounded font-mono text-emerald-400">M</kbd>
+        </div>
+        <div class="flex items-center justify-between py-1.5 border-b border-zinc-800/80">
+          <span class="text-zinc-300">Yanlış Şıkkı Ele (✕)</span>
+          <kbd class="px-2 py-1 bg-zinc-950 border border-zinc-700 rounded font-mono text-rose-400">X</kbd>
+        </div>
+        <div class="flex items-center justify-between py-1.5 border-b border-zinc-800/80">
+          <span class="text-zinc-300">Doğru / Yanlış / Çizgi Modu</span>
+          <div class="flex items-center gap-1 font-mono text-xs">
+            <kbd class="px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 rounded text-emerald-400">1</kbd>
+            <kbd class="px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 rounded text-rose-400">2</kbd>
+            <kbd class="px-1.5 py-0.5 bg-zinc-950 border border-zinc-700 rounded text-yellow-400">3</kbd>
+          </div>
         </div>
         <div class="flex items-center justify-between py-1.5 border-b border-zinc-800/80">
           <span class="text-zinc-300">Seçili Vurgu Alanını Sil</span>
