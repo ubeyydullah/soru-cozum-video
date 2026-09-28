@@ -107,6 +107,14 @@ const DOM = {
   annotationsList: document.getElementById('annotations-list'),
   btnAddAnnotation: document.getElementById('btn-add-annotation'),
 
+  // Smart Choice Assistant
+  btnAutoChoices5: document.getElementById('btn-auto-choices-5'),
+  btnAutoChoices4: document.getElementById('btn-auto-choices-4'),
+  btnDetectPixelChoices: document.getElementById('btn-detect-pixel-choices'),
+  smartAssistantStatus: document.getElementById('smart-assistant-status'),
+  targetChoiceBadge: document.getElementById('target-choice-badge'),
+  targetChoiceLetter: document.getElementById('target-choice-letter'),
+
   // Waveform & Audio
   btnAudioPlay: document.getElementById('btn-audio-play'),
   btnAudioBack: document.getElementById('btn-audio-back'),
@@ -559,7 +567,8 @@ function renderAnnotationsList() {
   DOM.annotationsList.innerHTML = '';
 
   if (State.annotations.length === 0) {
-    DOM.annotationsList.innerHTML = `<span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın.</span>`;
+    DOM.annotationsList.innerHTML = `<span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın veya şıkları otomatik yerleştirin.</span>`;
+    updateSmartAssistantUI();
     return;
   }
 
@@ -573,16 +582,26 @@ function renderAnnotationsList() {
     }`;
 
     let iconHtml = '🟢';
-    if (ann.shape === 'underline') iconHtml = '🟡 🖊️';
+    if (ann.isPending) iconHtml = '⏳';
+    else if (ann.shape === 'underline') iconHtml = '🟡 🖊️';
     else if (ann.type === 'wrong') iconHtml = '🔴 ✕';
     else iconHtml = '🟢 ✓';
 
+    let choiceBadgeHtml = '';
+    if (ann.choiceLetter) {
+      choiceBadgeHtml = `<span class="font-bold font-mono text-[10px] px-1.5 py-0.2 rounded ${ann.isPending ? 'bg-sky-950 text-sky-300 border border-sky-800' : (ann.type === 'wrong' ? 'bg-rose-950 text-rose-300 border border-rose-800' : 'bg-emerald-950 text-emerald-300 border border-emerald-800')}">${ann.choiceLetter}</span>`;
+    }
+
+    const timeText = ann.isPending ? 'Sırada' : formatTime(ann.timestamp);
+    const timeClass = ann.isPending ? 'text-amber-300 bg-amber-950/70 border border-amber-500/30' : 'text-zinc-300 bg-zinc-900 border border-zinc-800';
+
     item.innerHTML = `
-      <span class="flex items-center gap-1">
+      <span class="flex items-center gap-1.5">
         <span>${iconHtml}</span>
+        ${choiceBadgeHtml}
         <span>${ann.label || `Vurgu ${index + 1}`}</span>
       </span>
-      <span class="font-mono text-[10px] text-zinc-300 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">${formatTime(ann.timestamp)}</span>
+      <span class="font-mono text-[10px] px-1.5 py-0.5 rounded ${timeClass}">${timeText}</span>
       <button type="button" class="btn-del-ann ml-1 text-zinc-500 hover:text-red-400 p-0.5 rounded transition-colors" title="Vurguyu Sil">
         <i data-lucide="x" class="w-3 h-3"></i>
       </button>
@@ -603,6 +622,8 @@ function renderAnnotationsList() {
   if (window.lucide) {
     lucide.createIcons({ root: DOM.annotationsList });
   }
+
+  updateSmartAssistantUI();
 }
 
 // Yeni Vurgu Ekle Butonu
@@ -927,6 +948,323 @@ DOM.btnClearBox.addEventListener('click', () => {
 });
 
 // ==========================================
+// 4.5. AKILLI ŞIK ASİSTANI (OTOMATİK ALGILAMA & HIZLI KURGU)
+// ==========================================
+
+/**
+ * 4 veya 5 şıkkı soru görselinin tipik şık alanına altın oranla yerleştirir
+ */
+function applyChoiceTemplate(numChoices = 5) {
+  if (!State.image.element) {
+    alert('Lütfen önce bir soru görseli yükleyin!');
+    return;
+  }
+
+  const nw = State.image.naturalWidth;
+  const nh = State.image.naturalHeight;
+  const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, numChoices);
+
+  // Soru seçenekleri için orantılı yerleşim:
+  // X: %8'i, Genişlik: %82'si
+  // Y: Soru görselinin alt yarısı (%46 ile %92 arası)
+  const startY = Math.round(nh * 0.46);
+  const availableH = Math.round(nh * 0.46);
+  const rowSlot = availableH / numChoices;
+  const boxH = Math.max(34, Math.min(64, Math.round(rowSlot * 0.72)));
+  const boxW = Math.round(nw * 0.82);
+  const boxX = Math.round(nw * 0.08);
+
+  // Mevcut otomatik şıkları temizle (varsa)
+  State.annotations = State.annotations.filter(a => !a.isChoice);
+
+  const newChoices = letters.map((letter, idx) => {
+    const curY = Math.round(startY + idx * rowSlot + (rowSlot - boxH) / 2);
+    return {
+      id: `ann_choice_${letter}_${Date.now()}_${idx}`,
+      isChoice: true,
+      choiceLetter: letter,
+      label: `${letter} Şıkkı`,
+      isPending: true, // Sırada bekliyor, henüz zaman damgası almadı
+      type: 'neutral',
+      shape: 'rect',
+      box: {
+        x: boxX,
+        y: curY,
+        width: boxW,
+        height: boxH,
+      },
+      timestamp: 0,
+      color: '#38bdf8',
+      opacity: State.highlight.opacity || 0.30,
+      borderWidth: State.highlight.borderWidth || 4,
+      borderRadius: State.highlight.borderRadius || 14,
+      glow: State.highlight.glow !== undefined ? State.highlight.glow : true,
+      animType: State.highlight.animType || 'scale_glow',
+      animDuration: State.highlight.animDuration || 0.7,
+      checkmark: { enabled: false, position: 'right', style: 'badge' },
+      crossmark: { enabled: false, position: 'right', style: 'badge' }
+    };
+  });
+
+  State.annotations.push(...newChoices);
+
+  // İlk şıkkı (A) seçili yap
+  selectAnnotation(newChoices[0].id);
+  updateSmartAssistantUI();
+  renderAnnotationsList();
+  renderCanvas();
+  updateStepIndicator();
+  updateRenderButtonState();
+}
+
+/**
+ * Piksel projeksiyon analizi ile görseldeki şık satırlarını tarar (Sıfır Yapay Zeka, Saf Canvas Matematiği)
+ */
+function detectQuestionChoices(numChoices = 5) {
+  if (!State.image.element) {
+    alert('Lütfen önce bir soru görseli yükleyin!');
+    return;
+  }
+
+  const nw = State.image.naturalWidth;
+  const nh = State.image.naturalHeight;
+
+  // Offscreen canvas ile piksel yoğunluğunu tara
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = nw;
+  offCanvas.height = nh;
+  const octx = offCanvas.getContext('2d');
+  octx.drawImage(State.image.element, 0, 0);
+
+  // Soru şıklarının tipik olarak yer aldığı alan (dikeyde %35 - %95 arası)
+  const scanTop = Math.round(nh * 0.35);
+  const scanBottom = Math.round(nh * 0.95);
+  const scanH = scanBottom - scanTop;
+  const scanLeft = Math.round(nw * 0.05);
+  const scanW = Math.round(nw * 0.90);
+
+  let imgData;
+  try {
+    imgData = octx.getImageData(scanLeft, scanTop, scanW, scanH);
+  } catch (err) {
+    console.warn('Piksel analizi güvenlik kısıtlamasına takıldı, şablon kullanılıyor:', err);
+    applyChoiceTemplate(numChoices);
+    return;
+  }
+
+  const data = imgData.data;
+  // Her satırdaki koyu piksel sayısını hesapla (Yatay Projeksiyon)
+  const rowDensity = new Float32Array(scanH);
+  for (let y = 0; y < scanH; y++) {
+    let dark = 0;
+    const offset = y * scanW * 4;
+    for (let x = 0; x < scanW; x++) {
+      const idx = offset + x * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      if (lum < 165) dark++;
+    }
+    rowDensity[y] = dark;
+  }
+
+  // Düzleştirme (Smoothening)
+  const smoothed = new Float32Array(scanH);
+  const win = Math.max(3, Math.round(scanH * 0.015));
+  for (let y = 0; y < scanH; y++) {
+    let sum = 0, cnt = 0;
+    for (let w = -win; w <= win; w++) {
+      const py = y + w;
+      if (py >= 0 && py < scanH) {
+        sum += rowDensity[py];
+        cnt++;
+      }
+    }
+    smoothed[y] = sum / cnt;
+  }
+
+  // Satır bloklarını tespit et
+  const blocks = [];
+  let inBlock = false;
+  let bStart = 0;
+  const threshold = Math.max(4, scanW * 0.012);
+
+  for (let y = 0; y < scanH; y++) {
+    if (smoothed[y] > threshold) {
+      if (!inBlock) {
+        inBlock = true;
+        bStart = y;
+      }
+    } else {
+      if (inBlock) {
+        inBlock = false;
+        const bH = y - bStart;
+        if (bH >= Math.round(nh * 0.022)) {
+          blocks.push({
+            top: scanTop + bStart,
+            bottom: scanTop + y,
+            height: bH
+          });
+        }
+      }
+    }
+  }
+
+  // Eğer bulunan blok sayısı şık sayısına yakınsa doğrudan bu blokları şık kutularına dönüştür
+  if (blocks.length >= numChoices) {
+    const selectedBlocks = blocks.slice(-numChoices);
+    const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, numChoices);
+    const boxW = Math.round(nw * 0.82);
+    const boxX = Math.round(nw * 0.08);
+
+    State.annotations = State.annotations.filter(a => !a.isChoice);
+
+    const newChoices = selectedBlocks.map((b, idx) => {
+      const letter = letters[idx];
+      const padY = Math.max(4, Math.round(b.height * 0.25));
+      return {
+        id: `ann_choice_${letter}_${Date.now()}_${idx}`,
+        isChoice: true,
+        choiceLetter: letter,
+        label: `${letter} Şıkkı`,
+        isPending: true,
+        type: 'neutral',
+        shape: 'rect',
+        box: {
+          x: boxX,
+          y: Math.max(0, b.top - padY),
+          width: boxW,
+          height: b.height + padY * 2,
+        },
+        timestamp: 0,
+        color: '#38bdf8',
+        opacity: State.highlight.opacity || 0.30,
+        borderWidth: State.highlight.borderWidth || 4,
+        borderRadius: State.highlight.borderRadius || 14,
+        glow: State.highlight.glow !== undefined ? State.highlight.glow : true,
+        animType: State.highlight.animType || 'scale_glow',
+        animDuration: State.highlight.animDuration || 0.7,
+        checkmark: { enabled: false, position: 'right', style: 'badge' },
+        crossmark: { enabled: false, position: 'right', style: 'badge' }
+      };
+    });
+
+    State.annotations.push(...newChoices);
+    selectAnnotation(newChoices[0].id);
+    updateSmartAssistantUI();
+    renderAnnotationsList();
+    renderCanvas();
+    updateStepIndicator();
+    updateRenderButtonState();
+  } else {
+    // Bloklar tam ayırt edilemediyse orantılı şablonu uygula
+    applyChoiceTemplate(numChoices);
+  }
+}
+
+/**
+ * Sıradaki bekleyen şıkka otomatik odaklanma
+ */
+function advanceToNextPendingChoice() {
+  const pending = State.annotations.filter(a => a.isChoice && a.isPending);
+  if (pending.length > 0) {
+    selectAnnotation(pending[0].id);
+  }
+  updateSmartAssistantUI();
+}
+
+/**
+ * Tab / Shift+Tab ile şıklar arasında geçiş
+ */
+function cycleChoice(direction = 1) {
+  const choices = State.annotations.filter(a => a.isChoice);
+  if (choices.length === 0) return;
+  const currentIdx = choices.findIndex(a => a.id === State.activeAnnotationId);
+  let nextIdx = 0;
+  if (currentIdx !== -1) {
+    nextIdx = (currentIdx + direction + choices.length) % choices.length;
+  }
+  selectAnnotation(choices[nextIdx].id);
+  updateSmartAssistantUI();
+}
+
+/**
+ * Z tuşu ile son işaretlenen şıkkı geri alma / sıfırlama
+ */
+function undoLastChoice() {
+  const markedChoices = State.annotations.filter(a => a.isChoice && !a.isPending);
+  if (markedChoices.length === 0) return;
+  const lastMarked = markedChoices[markedChoices.length - 1];
+  lastMarked.isPending = true;
+  lastMarked.timestamp = 0;
+  lastMarked.type = 'neutral';
+  lastMarked.label = `${lastMarked.choiceLetter} Şıkkı`;
+  lastMarked.color = '#38bdf8';
+  lastMarked.checkmark.enabled = false;
+  lastMarked.crossmark.enabled = false;
+
+  selectAnnotation(lastMarked.id);
+  updateSmartAssistantUI();
+  renderAnnotationsList();
+  renderCanvas();
+  updateRenderButtonState();
+  updateStepIndicator();
+}
+
+/**
+ * Akıllı Asistan UI Durumunu ve Hedef Şık Göstergesini Günceller
+ */
+function updateSmartAssistantUI() {
+  if (!DOM.smartChoiceAssistant) return;
+  const choices = State.annotations.filter(a => a.isChoice);
+
+  if (choices.length === 0) {
+    if (DOM.targetChoiceBadge) DOM.targetChoiceBadge.classList.add('hidden');
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `Şıkları 1 tıkla yerleştirin; ses çalarken <kbd class="px-1 bg-zinc-800 text-rose-300 rounded font-mono text-[10px]">X</kbd> (Ele) ve <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">M</kbd> (Doğrula) ile kurgulayın.`;
+    }
+    return;
+  }
+
+  const pending = choices.filter(a => a.isPending);
+  const activeAnn = getActiveAnnotation();
+
+  if (DOM.targetChoiceBadge) {
+    DOM.targetChoiceBadge.classList.remove('hidden');
+    if (!DOM.targetChoiceBadge.classList.contains('flex')) {
+      DOM.targetChoiceBadge.classList.add('flex');
+    }
+  }
+
+  if (pending.length > 0) {
+    const curTarget = (activeAnn && activeAnn.isChoice && activeAnn.isPending) ? activeAnn : pending[0];
+    if (DOM.targetChoiceLetter) {
+      DOM.targetChoiceLetter.textContent = `${curTarget.choiceLetter} Şıkkı`;
+      DOM.targetChoiceLetter.className = 'font-bold font-mono text-xs text-zinc-950 bg-emerald-400 px-2 py-0.5 rounded shadow-sm animate-pulse';
+    }
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `🎯 Sıradaki: <strong class="text-white bg-emerald-500/30 px-1.5 py-0.5 rounded font-mono">${curTarget.choiceLetter} Şıkkı</strong> — Dinlerken yanlışsa <strong class="text-rose-400">[X]</strong>, doğruysa <strong class="text-emerald-400">[M]</strong> basın. (${choices.length - pending.length}/${choices.length} tamamlandı)`;
+    }
+  } else {
+    if (DOM.targetChoiceBadge) {
+      DOM.targetChoiceBadge.innerHTML = `<span class="text-emerald-400 font-bold flex items-center gap-1">✓ Tüm Şıklar Tamam!</span>`;
+    }
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `🎉 <strong class="text-emerald-400">Harika! Tüm şıklar işaretlendi.</strong> Önizlemek için <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">P</kbd> veya <kbd class="px-1 bg-zinc-800 text-zinc-300 rounded font-mono text-[10px]">Boşluk</kbd> tuşuna basın.`;
+    }
+  }
+}
+
+// Akıllı Şık Butonları Dinleyicileri
+if (DOM.btnAutoChoices5) {
+  DOM.btnAutoChoices5.addEventListener('click', () => applyChoiceTemplate(5));
+}
+if (DOM.btnAutoChoices4) {
+  DOM.btnAutoChoices4.addEventListener('click', () => applyChoiceTemplate(4));
+}
+if (DOM.btnDetectPixelChoices) {
+  DOM.btnDetectPixelChoices.addEventListener('click', () => detectQuestionChoices(5));
+}
+
+// ==========================================
 // 5. ANİMASYON VE CANVAS ÇİZİM MOTORU
 // ==========================================
 function easeOutBack(x) {
@@ -962,7 +1300,8 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
 
   // 2. Tüm Vurguları Sırayla Çiz
   for (const ann of State.annotations) {
-    const hasReached = currentTime >= ann.timestamp;
+    const isPending = !!ann.isPending;
+    const hasReached = !isPending && (currentTime >= ann.timestamp);
     let showAnn = false;
     let animProgress = 1.0;
 
@@ -970,9 +1309,11 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
       showAnn = true;
       animProgress = 1.0;
     } else if (isTestingAnim) {
-      const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
-      animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
-      showAnn = true;
+      if (!isPending) {
+        const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
+        animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
+        showAnn = true;
+      }
     } else if (hasReached) {
       // Vurgu zamanı geldi ve video sonuna kadar sabit kalır!
       const elapsed = currentTime - ann.timestamp;
@@ -987,6 +1328,15 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
     const bw = ann.box.width * scale;
     const bh = ann.box.height * scale;
 
+    // Eğer düzenleme modunda ve bekleyen şıksa aday şık kutusu çiz
+    if (isEditMode && isPending) {
+      drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann);
+      if (ann.id === State.activeAnnotationId) {
+        drawEditHandles(targetCtx, bx, by, bw, bh);
+      }
+      continue;
+    }
+
     if (ann.shape === 'underline') {
       // 5. Fosforlu Kalem / Altını Çizme Animasyonu
       drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
@@ -1000,6 +1350,11 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
       } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
         drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
       }
+    }
+
+    // Düzenleme modunda şık harfi rozetini sol üstte göster
+    if (isEditMode && ann.choiceLetter) {
+      drawChoiceTag(targetCtx, bx, by, scale, ann);
     }
 
     // Düzenleme modunda seçili ise tutamaçları çiz
@@ -1021,6 +1376,87 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
   if (State.retentionBar.enabled) {
     drawRetentionBar(targetCtx, currentTime, State.audio.duration);
   }
+}
+
+/**
+ * Bekleyen Şık Aday Kutusu (Edit modunda şıkların yerini gösteren zarif kesikli çerçeve)
+ */
+function drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann) {
+  const isActive = ann.id === State.activeAnnotationId;
+  targetCtx.save();
+
+  // Kesikli çizgi çerçeve
+  targetCtx.strokeStyle = isActive ? '#10b981' : 'rgba(56, 189, 248, 0.7)';
+  targetCtx.lineWidth = Math.max(1.5, (isActive ? 3 : 2) * scale);
+  targetCtx.setLineDash([6 * scale, 4 * scale]);
+
+  const radius = (ann.borderRadius || 14) * scale;
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  targetCtx.stroke();
+  targetCtx.setLineDash([]);
+
+  // Hafif arka plan dolgusu
+  targetCtx.fillStyle = isActive ? 'rgba(16, 185, 129, 0.14)' : 'rgba(56, 189, 248, 0.05)';
+  targetCtx.fill();
+
+  // Sol üstte şık harfi rozeti
+  const badgeH = Math.max(20, Math.round(22 * scale));
+  const badgeW = Math.max(26, Math.round(28 * scale));
+  const badgeX = bx + 6 * scale;
+  const badgeY = by + 6 * scale;
+
+  targetCtx.fillStyle = isActive ? '#10b981' : '#0284c7';
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 6 * scale);
+  else targetCtx.rect(badgeX, badgeY, badgeW, badgeH);
+  targetCtx.fill();
+
+  targetCtx.fillStyle = '#ffffff';
+  targetCtx.font = `bold ${Math.max(11, Math.round(13 * scale))}px "JetBrains Mono", monospace`;
+  targetCtx.textAlign = 'center';
+  targetCtx.textBaseline = 'middle';
+  targetCtx.fillText(ann.choiceLetter || '?', badgeX + badgeW / 2, badgeY + badgeH / 2);
+
+  // Yanında hedef ibaresi
+  if (isActive) {
+    targetCtx.fillStyle = '#10b981';
+    targetCtx.font = `bold ${Math.max(10, Math.round(11 * scale))}px "Plus Jakarta Sans", sans-serif`;
+    targetCtx.textAlign = 'left';
+    targetCtx.fillText('🎯 HEDEF ŞIK (Yanlış: [X] • Doğru: [M])', badgeX + badgeW + 8 * scale, badgeY + badgeH / 2);
+  } else {
+    targetCtx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    targetCtx.font = `${Math.max(9, Math.round(10 * scale))}px "Plus Jakarta Sans", sans-serif`;
+    targetCtx.textAlign = 'left';
+    targetCtx.fillText('Sırada Bekliyor', badgeX + badgeW + 6 * scale, badgeY + badgeH / 2);
+  }
+
+  targetCtx.restore();
+}
+
+/**
+ * İşaretlenmiş Şık Rozeti (Edit modunda şık kutusunun üstündeki harf etiketi)
+ */
+function drawChoiceTag(targetCtx, bx, by, scale, ann) {
+  targetCtx.save();
+  const badgeH = Math.max(18, Math.round(20 * scale));
+  const badgeW = Math.max(24, Math.round(26 * scale));
+  const badgeX = bx + 6 * scale;
+  const badgeY = by + 6 * scale;
+
+  targetCtx.fillStyle = ann.type === 'wrong' ? '#ef4444' : '#22c55e';
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(badgeX, badgeY, badgeW, badgeH, 5 * scale);
+  else targetCtx.rect(badgeX, badgeY, badgeW, badgeH);
+  targetCtx.fill();
+
+  targetCtx.fillStyle = '#ffffff';
+  targetCtx.font = `bold ${Math.max(10, Math.round(12 * scale))}px "JetBrains Mono", monospace`;
+  targetCtx.textAlign = 'center';
+  targetCtx.textBaseline = 'middle';
+  targetCtx.fillText(ann.choiceLetter, badgeX + badgeW / 2, badgeY + badgeH / 2);
+  targetCtx.restore();
 }
 
 /**
@@ -1066,7 +1502,7 @@ function drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEd
 
   if (ann.glow) {
     targetCtx.shadowColor = hex;
-    targetCtx.shadowBlur = (14 + glowPulse * 24) * scale;
+    targetCtx.shadowBlur = Math.round((4 + glowPulse * 6) * scale);
   } else {
     targetCtx.shadowBlur = 0;
   }
@@ -1089,14 +1525,14 @@ function drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEd
   targetCtx.stroke();
   targetCtx.restore();
 
-  // Dışa Yayılan Şok Dalgası (Expanding Shockwave Ring)
-  if (glowPulse > 0.02) {
+  // Dışa Yayılan Hafif Şok Dalgası (Subtle Shockwave Ring)
+  if (glowPulse > 0.05) {
     targetCtx.save();
-    const shockExpand = (1.0 - glowPulse) * 22 * scale;
-    targetCtx.lineWidth = ((ann.borderWidth || 4) + 2) * scale;
-    targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.85 * glowPulse})`;
+    const shockExpand = (1.0 - glowPulse) * 8 * scale;
+    targetCtx.lineWidth = Math.max(1.5, ((ann.borderWidth || 4) * 0.7) * scale);
+    targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.35 * glowPulse})`;
     targetCtx.shadowColor = hex;
-    targetCtx.shadowBlur = 10 * scale;
+    targetCtx.shadowBlur = 3 * scale;
 
     targetCtx.beginPath();
     if (ann.shape === 'rect') {
@@ -1143,7 +1579,7 @@ function drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress
 
   if (ann.glow) {
     targetCtx.shadowColor = hex;
-    targetCtx.shadowBlur = 10 * scale;
+    targetCtx.shadowBlur = 4 * scale;
   }
 
   targetCtx.moveTo(startX + lineH * 0.4, lineY);
@@ -1156,7 +1592,7 @@ function drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress
     targetCtx.beginPath();
     targetCtx.arc(startX + currentW - lineH * 0.4, lineY, lineH * 0.35, 0, 2 * Math.PI);
     targetCtx.shadowColor = '#ffffff';
-    targetCtx.shadowBlur = 8 * scale;
+    targetCtx.shadowBlur = 4 * scale;
     targetCtx.fill();
   }
   targetCtx.restore();
@@ -1208,7 +1644,7 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
     targetCtx.fillStyle = greenHex;
     if (ann.glow) {
       targetCtx.shadowColor = greenHex;
-      targetCtx.shadowBlur = 12 * scale;
+      targetCtx.shadowBlur = 4 * scale;
     }
     targetCtx.fill();
 
@@ -1230,7 +1666,7 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
 
     if (style === 'plain' && ann.glow) {
       targetCtx.shadowColor = greenHex;
-      targetCtx.shadowBlur = 10 * scale;
+      targetCtx.shadowBlur = 4 * scale;
     }
 
     if (strokeProgress <= 0.38) {
@@ -1280,7 +1716,7 @@ function drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
   targetCtx.fillStyle = redHex;
   if (ann.glow) {
     targetCtx.shadowColor = redHex;
-    targetCtx.shadowBlur = 14 * scale;
+    targetCtx.shadowBlur = 4 * scale;
   }
   targetCtx.fill();
 
@@ -1341,14 +1777,14 @@ function drawRetentionBar(targetCtx, currentTime, totalDuration) {
   const currentW = canvasW * progress;
   targetCtx.fillStyle = State.retentionBar.color;
   targetCtx.shadowColor = State.retentionBar.color;
-  targetCtx.shadowBlur = 10;
+  targetCtx.shadowBlur = 4;
   targetCtx.fillRect(0, y, currentW, barHeight);
 
   // Parlayan ön uç
   if (progress > 0.01 && progress < 0.995) {
     targetCtx.fillStyle = '#ffffff';
     targetCtx.shadowColor = '#ffffff';
-    targetCtx.shadowBlur = 8;
+    targetCtx.shadowBlur = 4;
     targetCtx.fillRect(Math.max(0, currentW - 3), y, 3, barHeight);
   }
   targetCtx.restore();
@@ -1424,9 +1860,14 @@ function setTimestamp(seconds, type = null) {
   const ann = getActiveAnnotation();
   if (ann) {
     ann.timestamp = ts;
+    ann.isPending = false;
     if (type) {
       ann.type = type;
-      ann.label = type === 'correct' ? 'Doğru (✓)' : (ann.shape === 'underline' ? 'Fosforlu Çizgi' : 'Yanlış (✕)');
+      if (ann.isChoice) {
+        ann.label = `${ann.choiceLetter} Şıkkı (${type === 'correct' ? '✓ Doğru' : '✕ Yanlış'})`;
+      } else {
+        ann.label = type === 'correct' ? 'Doğru (✓)' : (ann.shape === 'underline' ? 'Fosforlu Çizgi' : 'Yanlış (✕)');
+      }
       if (ann.shape !== 'underline') {
         ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
         ann.checkmark.enabled = (type === 'correct');
@@ -1434,6 +1875,10 @@ function setTimestamp(seconds, type = null) {
         DOM.cfgColorFill.value = ann.color;
         DOM.textColorFill.textContent = ann.color.toUpperCase();
       }
+    }
+
+    if (ann.isChoice) {
+      advanceToNextPendingChoice();
     }
   }
 
@@ -1445,6 +1890,7 @@ function setTimestamp(seconds, type = null) {
     DOM.badgeMarkedTime.classList.remove('neon-glow');
   }, 2000);
 
+  updateSmartAssistantUI();
   renderAnnotationsList();
   updateFfmpegCommand();
   updateRenderButtonState();
@@ -1834,6 +2280,14 @@ window.addEventListener('keydown', (e) => {
     if (wavesurfer && State.audio.duration > 0) {
       DOM.btnPreviewHighlight.click();
     }
+  } else if (e.key === 'Tab') {
+    e.preventDefault();
+    cycleChoice(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'z' || e.key === 'Z') {
+    if (!e.metaKey) { // Z veya Ctrl+Z ile son şıkkı geri al
+      e.preventDefault();
+      undoLastChoice();
+    }
   } else if (State.box.active && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
     e.preventDefault();
     const step = e.shiftKey ? 10 : 2;
@@ -1858,14 +2312,15 @@ DOM.btnShortcuts.addEventListener('click', () => {
 // 9. VİDEO RENDER VE DIŞA AKTARMA (EXPORT)
 // ==========================================
 function updateRenderButtonState() {
-  const ready = State.image.element !== null && State.audio.file !== null && State.box.active;
+  const hasValidAnn = State.annotations.some(a => !a.isPending && a.box.width > 5) || (State.box.active && State.box.width > 5);
+  const ready = State.image.element !== null && State.audio.file !== null && hasValidAnn;
   DOM.btnStartRender.disabled = !ready;
 }
 
 function updateStepIndicator() {
-  const s1 = State.image.element && State.audio.file;
-  const s2 = State.box.active;
-  const s3 = State.timestamp > 0;
+  const s1 = !!(State.image.element && State.audio.file);
+  const s2 = State.annotations.length > 0 || State.box.active;
+  const s3 = State.annotations.some(a => !a.isPending && a.timestamp > 0) || State.timestamp > 0;
   const s4 = true;
   const s5 = s1 && s2;
 
@@ -2288,7 +2743,8 @@ DOM.btnCloseRenderModal.addEventListener('click', () => {
 // 10. FFMPEG CLI KOMUT ÜRETİCİ
 // ==========================================
 function updateFfmpegCommand() {
-  const activeList = State.annotations.length > 0 ? State.annotations : (State.box.active ? [{
+  const validAnnotations = State.annotations.filter(a => !a.isPending && a.box && a.box.width > 5);
+  const activeList = validAnnotations.length > 0 ? validAnnotations : (State.box.active ? [{
     box: State.box,
     timestamp: State.timestamp,
     color: State.highlight.color,
@@ -2436,7 +2892,9 @@ DOM.btnLoadDemo.addEventListener('click', () => {
         },
         {
           id: 'demo_ann_2',
-          label: 'Yanlış (A Şıkkı)',
+          isChoice: true,
+          choiceLetter: 'A',
+          label: 'A Şıkkı (✕ Yanlış)',
           type: 'wrong',
           shape: 'rect',
           box: { x: 125, y: 470, width: 220, height: 55 },
@@ -2453,7 +2911,9 @@ DOM.btnLoadDemo.addEventListener('click', () => {
         },
         {
           id: 'demo_ann_3',
-          label: 'Doğru (C Şıkkı)',
+          isChoice: true,
+          choiceLetter: 'C',
+          label: 'C Şıkkı (✓ Doğru)',
           type: 'correct',
           shape: 'rect',
           box: { x: 125, y: 630, width: 640, height: 60 },
@@ -2480,6 +2940,7 @@ DOM.btnLoadDemo.addEventListener('click', () => {
       if (DOM.textRetentionColor) DOM.textRetentionColor.textContent = '#22C55E';
 
       selectAnnotation('demo_ann_3');
+      updateSmartAssistantUI();
     }, 400);
   });
 
