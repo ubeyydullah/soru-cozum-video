@@ -1,0 +1,13 @@
+# Geçici ve Çıktı Medya Dosyaları
+*.mp4
+*.webm
+*.wav
+*.mp3
+*.log
+
+# İşletim Sistemi ve IDE Dosyaları
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
