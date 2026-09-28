@@ -36,7 +36,7 @@ const State = {
     borderRadius: 16,
     glow: true,
     animType: 'scale_glow', // 'scale_glow' | 'fade_pulse' | 'pop_in' | 'smooth_fade'
-    animDuration: 0.45, // seconds
+    animDuration: 0.8, // seconds (daha belirgin ve akıcı)
   },
   checkmark: {
     enabled: true,
@@ -118,6 +118,8 @@ const DOM = {
   cfgBorderRadius: document.getElementById('cfg-border-radius'),
   textBorderRadius: document.getElementById('text-border-radius'),
   cfgAnimType: document.getElementById('cfg-anim-type'),
+  cfgAnimDuration: document.getElementById('cfg-anim-duration'),
+  textAnimDuration: document.getElementById('text-anim-duration'),
   cfgGlowToggle: document.getElementById('cfg-glow-toggle'),
   btnPreviewAnimOnly: document.getElementById('btn-preview-anim-only'),
 
@@ -635,46 +637,31 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
     return;
   }
 
-  // Animasyon Skalası ve Opaklık Hesaplama
+  // Animasyon Skalası ve Opaklık Hesaplama (Göz alıcı ve belirgin dinamik)
   let animScale = 1.0;
   let animAlpha = State.highlight.opacity;
   let glowPulse = 0;
 
   if (State.highlight.animType === 'scale_glow') {
-    // Scale-up + Glow: 0.85 -> 1.08 -> 1.0
+    // Güçlü Scale-Up: 0.15'ten yaylanarak 1.15'e patlar ve 1.0'a oturur
     const eased = easeOutBack(animProgress);
-    animScale = 0.85 + 0.15 * eased;
-    animAlpha = State.highlight.opacity * Math.min(1.0, animProgress * 1.5);
+    animScale = Math.max(0.05, Math.min(1.22, eased));
+    animAlpha = State.highlight.opacity * Math.min(1.0, animProgress * 2.2);
     glowPulse = Math.max(0, 1.0 - animProgress);
   } else if (State.highlight.animType === 'fade_pulse') {
-    // Smooth Fade + Pulse
-    animScale = 1.0 + 0.08 * Math.sin(animProgress * Math.PI);
+    // Yumuşak Fade + Çift Nabız (Pulse)
+    animScale = 1.0 + 0.14 * Math.sin(animProgress * Math.PI);
     animAlpha = State.highlight.opacity * easeOutQuad(animProgress);
     glowPulse = Math.sin(animProgress * Math.PI);
   } else if (State.highlight.animType === 'pop_in') {
     // Enerjik Pop-In
     const eased = easeOutBack(animProgress);
-    animScale = 0.7 + 0.3 * eased;
+    animScale = Math.max(0.05, Math.min(1.25, eased));
     animAlpha = State.highlight.opacity;
+    glowPulse = Math.max(0, 1.0 - animProgress);
   } else {
     // Sade Fade-In
     animAlpha = State.highlight.opacity * animProgress;
-  }
-
-  // Şekli Merkezden Büyütecek Transform Matrix
-  targetCtx.save();
-  const centerX = bx + bw / 2;
-  const centerY = by + bh / 2;
-  targetCtx.translate(centerX, centerY);
-  targetCtx.scale(animScale, animScale);
-  targetCtx.translate(-centerX, -centerY);
-
-  // Parlama (Glow / Neon) Efekti
-  if (State.highlight.glow) {
-    targetCtx.shadowColor = State.highlight.color;
-    targetCtx.shadowBlur = (12 + glowPulse * 16) * scale;
-  } else {
-    targetCtx.shadowBlur = 0;
   }
 
   // Renk Değerleri
@@ -682,12 +669,27 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
+  const radius = State.highlight.borderRadius * scale;
+  const centerX = bx + bw / 2;
+  const centerY = by + bh / 2;
+
+  // Şekli Merkezden Büyütecek Transform Matrix
+  targetCtx.save();
+  targetCtx.translate(centerX, centerY);
+  targetCtx.scale(animScale, animScale);
+  targetCtx.translate(-centerX, -centerY);
+
+  // Parlama (Glow / Neon) Efekti
+  if (State.highlight.glow) {
+    targetCtx.shadowColor = State.highlight.color;
+    targetCtx.shadowBlur = (14 + glowPulse * 24) * scale;
+  } else {
+    targetCtx.shadowBlur = 0;
+  }
 
   targetCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${animAlpha})`;
   targetCtx.strokeStyle = State.highlight.color;
   targetCtx.lineWidth = State.highlight.borderWidth * scale;
-
-  const radius = State.highlight.borderRadius * scale;
 
   targetCtx.beginPath();
   if (State.highlight.shape === 'rect') {
@@ -704,16 +706,32 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
   targetCtx.fill();
   targetCtx.stroke();
 
-  // Ekstra Parlayan Dış Halka (Animasyon giriş anı mikro efekti)
-  if (glowPulse > 0.05) {
+  targetCtx.restore();
+
+  // Dışa Doğru Yayılan Şok Dalgası (Expanding Shockwave Ring)
+  if (glowPulse > 0.02) {
     targetCtx.save();
-    targetCtx.lineWidth = (State.highlight.borderWidth + 4 * glowPulse) * scale;
-    targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.6 * glowPulse})`;
+    const shockExpand = (1.0 - glowPulse) * 22 * scale;
+    targetCtx.lineWidth = (State.highlight.borderWidth + 2) * scale;
+    targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${0.85 * glowPulse})`;
+    targetCtx.shadowColor = State.highlight.color;
+    targetCtx.shadowBlur = 10 * scale;
+
+    targetCtx.beginPath();
+    if (State.highlight.shape === 'rect') {
+      const rx = bx - shockExpand;
+      const ry = by - shockExpand;
+      const rw = bw + shockExpand * 2;
+      const rh = bh + shockExpand * 2;
+      const rr = radius + shockExpand;
+      if (targetCtx.roundRect) targetCtx.roundRect(rx, ry, rw, rh, rr);
+      else drawRoundRectFallback(targetCtx, rx, ry, rw, rh, rr);
+    } else {
+      targetCtx.ellipse(centerX, centerY, (bw / 2) + shockExpand, (bh / 2) + shockExpand, 0, 0, 2 * Math.PI);
+    }
     targetCtx.stroke();
     targetCtx.restore();
   }
-
-  targetCtx.restore();
 
   // Onay İşareti (Tik ✓) Rozetini Çiz
   if (State.checkmark.enabled) {
@@ -977,6 +995,11 @@ DOM.cfgAnimType.addEventListener('change', (e) => {
   State.highlight.animType = e.target.value;
 });
 
+DOM.cfgAnimDuration.addEventListener('input', (e) => {
+  State.highlight.animDuration = parseFloat(e.target.value);
+  DOM.textAnimDuration.textContent = `${State.highlight.animDuration.toFixed(1)}s`;
+});
+
 DOM.cfgGlowToggle.addEventListener('change', (e) => {
   State.highlight.glow = e.target.checked;
   renderCanvas();
@@ -1146,6 +1169,7 @@ async function startVideoRender() {
 
     // 4. MediaStream ve MediaRecorder Kurulumu
     const canvasStream = renderCanvas.captureStream(fps);
+    const videoTrack = canvasStream.getVideoTracks()[0];
     const combinedStream = new MediaStream([
       ...canvasStream.getVideoTracks(),
       ...audioDestination.stream.getAudioTracks()
@@ -1202,7 +1226,12 @@ async function startVideoRender() {
       // 1. O andaki geçerli kareyi çiz
       drawFrame(renderCtx, elapsed, true);
 
-      // 2. Canlı önizleme ekranına yansıt
+      // 2. Tarayıcı video enkoderine bu kareyi ZORUNLU olarak gönder
+      if (videoTrack && videoTrack.requestFrame) {
+        try { videoTrack.requestFrame(); } catch (err) {}
+      }
+
+      // 3. Canlı önizleme ekranına yansıt
       previewCtx.clearRect(0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
       previewCtx.drawImage(renderCanvas, 0, 0, DOM.renderPreviewCanvas.width, DOM.renderPreviewCanvas.height);
 

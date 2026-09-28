@@ -335,15 +335,24 @@
           </div>
         </div>
 
-        <!-- Animasyon Efekti Seçici -->
-        <div class="space-y-1.5 text-xs">
-          <label class="block text-zinc-400 text-[11px] font-medium">Giriş Animasyonu</label>
-          <select id="cfg-anim-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500 font-medium">
-            <option value="scale_glow" selected>Scale-Up + Neon Glow (Önerilen)</option>
-            <option value="fade_pulse">Hafif Fade-In + Çift Nabız (Pulse)</option>
-            <option value="pop_in">Enerjik Pop-In</option>
-            <option value="smooth_fade">Sade & Temiz Fade-In</option>
-          </select>
+        <!-- Animasyon Efekti ve Süresi -->
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div>
+            <label class="block text-zinc-400 text-[11px] font-medium mb-1">Giriş Animasyonu</label>
+            <select id="cfg-anim-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-2.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-emerald-500 font-medium">
+              <option value="scale_glow" selected>Patlama + Parlama (Scale-Up)</option>
+              <option value="fade_pulse">Hafif Fade + Çift Nabız</option>
+              <option value="pop_in">Enerjik Pop-In</option>
+              <option value="smooth_fade">Sade & Temiz Fade-In</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-zinc-400 text-[11px] font-medium mb-1">Animasyon Süresi</label>
+            <div class="flex items-center gap-2 bg-zinc-950 px-2 py-2 rounded-lg border border-zinc-800">
+              <input type="range" id="cfg-anim-duration" min="0.4" max="2.0" step="0.1" value="0.8" class="w-full">
+              <span id="text-anim-duration" class="font-mono text-[11px] text-emerald-400 font-bold w-9 text-right">0.8s</span>
+            </div>
+          </div>
         </div>
 
         <!-- Parlama (Neon Glow) Anahtarı -->
