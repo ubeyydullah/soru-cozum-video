@@ -128,6 +128,7 @@ const DOM = {
   btnAddAnnotation: document.getElementById('btn-add-annotation'),
 
   // Smart Choice Assistant & AI Automation
+  smartChoiceAssistant: document.getElementById('smart-choice-assistant'),
   btnClickWrap: document.getElementById('btn-click-wrap'),
   btnAiAutoMatch: document.getElementById('btn-ai-auto-match'),
   smartAssistantStatus: document.getElementById('smart-assistant-status'),
@@ -138,6 +139,8 @@ const DOM = {
   btnNudgePrevSec: document.getElementById('btn-nudge-prev-sec'),
   btnNudgeNextSec: document.getElementById('btn-nudge-next-sec'),
   btnClearAllChoices: document.getElementById('btn-clear-all-choices'),
+  cfgChoiceWidth: document.getElementById('cfg-choice-width'),
+  cfgChoiceAlign: document.getElementById('cfg-choice-align'),
 
   // Toplu Şık Boyutlandırma & Kolon Hizalama
   sliderChoiceBulkWidth: document.getElementById('slider-choice-bulk-width'),
@@ -1013,8 +1016,8 @@ function syncControlsWithActive() {
   DOM.cfgAnimDuration.value = ann.animDuration || 0.8;
   DOM.textAnimDuration.textContent = `${(ann.animDuration || 0.8).toFixed(1)}s`;
   DOM.cfgGlowToggle.checked = !!ann.glow;
-  DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
-  DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+  if (DOM.inputTimestampManual) DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+  if (DOM.badgeMarkedTime) DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
 
   // Checkmark kontrolleri
   if (ann.type === 'correct') {
@@ -2086,8 +2089,8 @@ if (DOM.btnNudgePrevSec) {
     const ann = getActiveAnnotation();
     if (ann) {
       ann.timestamp = Math.max(0, parseFloat(((ann.timestamp || 0) - 0.1).toFixed(2)));
-      DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
-      DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+      if (DOM.badgeMarkedTime) DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+      if (DOM.inputTimestampManual) DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
       renderAnnotationsList();
       renderCanvas();
       updateFfmpegCommand();
@@ -2100,8 +2103,8 @@ if (DOM.btnNudgeNextSec) {
     const ann = getActiveAnnotation();
     if (ann) {
       ann.timestamp = Math.min(State.audio.duration || 9999, parseFloat(((ann.timestamp || 0) + 0.1).toFixed(2)));
-      DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
-      DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+      if (DOM.badgeMarkedTime) DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+      if (DOM.inputTimestampManual) DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
       renderAnnotationsList();
       renderCanvas();
       updateFfmpegCommand();
@@ -4044,13 +4047,15 @@ function setTimestamp(seconds, type = null) {
     }
   }
 
-  DOM.inputTimestampManual.value = ts.toFixed(2);
-  DOM.badgeMarkedTime.textContent = formatTime(ts);
-  DOM.badgeMarkedTime.classList.remove('bg-emerald-500/10', 'text-emerald-400');
-  DOM.badgeMarkedTime.classList.add(type === 'wrong' ? 'bg-rose-500' : 'bg-emerald-500', 'text-zinc-950', 'neon-glow');
-  setTimeout(() => {
-    DOM.badgeMarkedTime.classList.remove('neon-glow');
-  }, 2000);
+  if (DOM.inputTimestampManual) DOM.inputTimestampManual.value = ts.toFixed(2);
+  if (DOM.badgeMarkedTime) {
+    DOM.badgeMarkedTime.textContent = formatTime(ts);
+    DOM.badgeMarkedTime.classList.remove('bg-emerald-500/10', 'text-emerald-400');
+    DOM.badgeMarkedTime.classList.add(type === 'wrong' ? 'bg-rose-500' : 'bg-emerald-500', 'text-zinc-950', 'neon-glow');
+    setTimeout(() => {
+      if (DOM.badgeMarkedTime) DOM.badgeMarkedTime.classList.remove('neon-glow');
+    }, 2000);
+  }
 
   updateSmartAssistantUI();
   renderAnnotationsList();
