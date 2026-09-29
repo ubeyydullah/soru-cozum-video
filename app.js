@@ -2665,9 +2665,10 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
 
         for (let i = 0; i < validChoices.length; i++) {
           const choice = validChoices[i];
+          const start = Math.max(0, parseFloat(choice.timestamp) || 0);
           const isLastChoice = (i === validChoices.length - 1);
           const nextStart = !isLastChoice
-            ? (validChoices[i + 1].timestamp || (start + 4.0))
+            ? (Math.max(0, parseFloat(validChoices[i + 1].timestamp) || (start + 4.0)))
             : (State.audio.duration || (start + 5.0));
           const duration = Math.max(0.8, nextStart - start);
           const ratio = State.choiceLayout.verdictRatio || 0.65;
@@ -4175,8 +4176,9 @@ async function renderWithMediaRecorder(targetW, targetH, fps, decodedAudioBuffer
  * Ana Video Render Başlatıcı
  */
 async function startVideoRender() {
-  if (!State.image.element || !State.audio.file || !State.box.active) {
-    alert('Lütfen soru görselini, ses kaydını yükleyin ve doğru cevabın alanını çizin!');
+  const hasValidAnn = State.annotations.some(a => a.box && a.box.width > 5) || (State.box.active && State.box.width > 5);
+  if (!State.image.element || !State.audio.file || !hasValidAnn) {
+    alert('Lütfen soru görselini, ses kaydını yükleyin ve en az bir vurgu/şık belirleyin!');
     return;
   }
 
