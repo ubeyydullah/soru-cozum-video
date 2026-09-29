@@ -1901,69 +1901,127 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
   let lastErr = null;
 
   for (const vKey of visionKeysToTry) {
-    try {
-      let endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-      let model = 'llama-3.2-11b-vision-preview';
+    // Denenecek model adayları
+    const candidateModels = (vKey.type === 'github') 
+      ? ['gpt-4o-mini'] 
+      : ['llama-3.2-90b-vision-preview', 'meta-llama/llama-4-scout-17b-16e-instruct'];
 
-      if (vKey.type === 'github') {
-        endpoint = 'https://models.inference.ai.azure.com/chat/completions';
-        model = 'gpt-4o-mini';
+    for (const model of candidateModels) {
+      try {
+        let endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+        if (vKey.type === 'github') {
+          endpoint = 'https://models.inference.ai.azure.com/chat/completions';
+        }
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${vKey.key}`
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  { type: 'image_url', image_url: { url: base64Image } }
+                ]
+              }
+            ],
+            temperature: 0.1,
+            max_tokens: 1000
+          })
+        });
+
+        if (res.status === 429) {
+          console.warn(`Vision modeli ${model} kotası doldu (429), sıradakine geçiliyor...`);
+          continue;
+        }
+
+        if (!res.ok) {
+          const errJson = await res.json().catch(() => ({}));
+          console.warn(`Model ${model} hatası:`, errJson.error?.message);
+          lastErr = new Error(errJson.error?.message || `HTTP ${res.status}`);
+          continue; // Bir sonraki model adayına geç
+        }
+
+        const data = await res.json();
+        let content = data.choices?.[0]?.message?.content || "";
+        
+        content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const firstBracket = content.indexOf('[');
+        const lastBracket = content.lastIndexOf(']');
+        if (firstBracket !== -1 && lastBracket !== -1) {
+          content = content.substring(firstBracket, lastBracket + 1);
+        }
+
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        lastErr = e;
+        console.error(`${model} deneme hatası:`, e);
       }
+    }
+  }
 
-      const res = await fetch(endpoint, {
+  // CAN SİMİDİ YEDEK: Eğer görsel modelleri kullanılamazsa, Groq'un metin zekası (Llama 3.3 70B) ile transkripti eşle!
+  if (State.ai.groqKey || (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_'))) {
+    const textKey = State.ai.groqKey || State.ai.backupKey1;
+    try {
+      console.log('Görsel modeli yerine transkript metin analizi ile şıklar eşleştiriliyor...');
+      const fallbackPrompt = `Sen bir sınav sorusu çözüm video editörüsün.
+Aşağıdaki ses transkriptine bakarak öğretmenin elediği ve doğru bulduğu şıkları zaman damgalarıyla çıkar:
+
+SES TRANSKRİPTİ:
+${transcriptText}
+
+GÖREV:
+A, B, C, D (varsa E) şıklarını dikey standart sırasına göre yerleştirerek şu formatta bir JSON array döndür:
+[
+  { "letter": "A", "type": "wrong", "timestamp": 2.1, "x_percent": 12, "y_percent": 48, "width_percent": 45, "height_percent": 6 },
+  { "letter": "B", "type": "wrong", "timestamp": 4.5, "x_percent": 12, "y_percent": 56, "width_percent": 45, "height_percent": 6 },
+  { "letter": "C", "type": "correct", "timestamp": 7.2, "x_percent": 12, "y_percent": 64, "width_percent": 45, "height_percent": 6 },
+  { "letter": "D", "type": "wrong", "timestamp": 0, "x_percent": 12, "y_percent": 72, "width_percent": 45, "height_percent": 6 }
+]
+SADECE JSON array döndür, markdown yazma:`;
+
+      const textRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${vKey.key}`
+          'Authorization': `Bearer ${textKey}`
         },
         body: JSON.stringify({
-          model: model,
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: prompt },
-                { type: 'image_url', image_url: { url: base64Image } }
-              ]
-            }
-          ],
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: fallbackPrompt }],
           temperature: 0.1,
           max_tokens: 1000
         })
       });
 
-      if (res.status === 429) {
-        console.warn(`Vision modeli ${vKey.type} kotası doldu, yedeğe geçiliyor...`);
-        continue;
+      if (textRes.ok) {
+        const textData = await textRes.json();
+        let txt = textData.choices?.[0]?.message?.content || "";
+        txt = txt.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const fb = txt.indexOf('[');
+        const lb = txt.lastIndexOf(']');
+        if (fb !== -1 && lb !== -1) {
+          const parsed = JSON.parse(txt.substring(fb, lb + 1));
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
       }
-
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error?.message || `Görsel analizi hatası (${res.status})`);
-      }
-
-      const data = await res.json();
-      let content = data.choices?.[0]?.message?.content || "";
-      
-      // Temizle (varsa markdown bloklarını sök)
-      content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const firstBracket = content.indexOf('[');
-      const lastBracket = content.lastIndexOf(']');
-      if (firstBracket !== -1 && lastBracket !== -1) {
-        content = content.substring(firstBracket, lastBracket + 1);
-      }
-
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    } catch (e) {
-      lastErr = e;
-      console.error('Vision deneme hatası:', e);
+    } catch (textErr) {
+      console.error('Metin analizi yedek hatası:', textErr);
     }
   }
 
-  throw new Error(lastErr ? lastErr.message : 'Görsel analizi başarısız oldu.');
+  throw new Error(lastErr ? lastErr.message : 'Şık analizi gerçekleştirilemedi.');
 }
 
 // Şıkları State ve Canvas'a Uygula
