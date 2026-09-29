@@ -857,21 +857,20 @@
         <input id="input-api-key-backup1" type="password" placeholder="İkinci Groq (gsk_...) veya Hugging Face (hf_...)" class="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
       </div>
 
-      <!-- 3. Anahtar: Yedek 2 (GitHub Models - GPT-4o-mini) -->
+      <!-- 3. Anahtar: Yedek 2 (3. Groq veya Alternatif) -->
       <div class="space-y-2 pt-2 border-t border-zinc-800/80">
         <div class="flex items-center justify-between">
           <label class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
-            <span class="w-4 h-4 rounded-full bg-zinc-700 border border-zinc-600 text-zinc-300 flex items-center justify-center text-[10px]">3</span>
-            <span>2. Yedek: GitHub Models (GPT-4o-mini)</span>
+            <span class="w-4 h-4 rounded-full bg-amber-500/20 border border-amber-500 text-amber-400 flex items-center justify-center text-[10px]">3</span>
+            <span>2. Yedek: 3. Groq Anahtarı (İsteğe Bağlı)</span>
+            <span class="text-[10px] px-1.5 py-0.2 bg-amber-500/20 text-amber-300 font-semibold rounded">Kesintisiz Rotasyon</span>
           </label>
-          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" class="text-[11px] font-semibold text-zinc-400 hover:text-zinc-300 underline flex items-center gap-1">
-            <span>Token Al ↗</span>
-          </a>
+          <span class="text-[10px] text-zinc-500 font-mono">İsteğe Bağlı</span>
         </div>
         <p class="text-[11px] text-zinc-400 leading-relaxed">
-          GitHub hesabınız varsa <strong>Personal Access Token (classic)</strong> girerek GPT-4o-mini görsel analizini yedek yapabilirsiniz.
+          Farklı bir maille aldığınız <strong>3. bir Groq anahtarını</strong> eklerseniz, diğerlerinin kotası dolsa bile sistem fark ettirmeden buna geçerek işlemi tamamlar.
         </p>
-        <input id="input-api-key-github" type="password" placeholder="ghp_..." class="w-full bg-zinc-950 border border-zinc-800 focus:border-zinc-600 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
+        <input id="input-api-key-backup2" type="password" placeholder="Üçüncü Groq anahtarı (gsk_...)" class="w-full bg-zinc-950 border border-zinc-800 focus:border-amber-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
       </div>
 
       <!-- Durum Mesajı & Butonlar -->

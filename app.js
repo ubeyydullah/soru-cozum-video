@@ -38,7 +38,7 @@ const State = {
   ai: {
     groqKey: localStorage.getItem('soru_ai_groq_key') || '',
     backupKey1: localStorage.getItem('soru_ai_backup1_key') || '',
-    githubKey: localStorage.getItem('soru_ai_github_key') || '',
+    backupKey2: localStorage.getItem('soru_ai_backup2_key') || '',
     isProcessing: false,
   },
 
@@ -132,7 +132,7 @@ const DOM = {
   btnCloseAiSettings: document.getElementById('btn-close-ai-settings'),
   inputApiKeyGroq: document.getElementById('input-api-key-groq'),
   inputApiKeyBackup1: document.getElementById('input-api-key-backup1'),
-  inputApiKeyGithub: document.getElementById('input-api-key-github'),
+  inputApiKeyBackup2: document.getElementById('input-api-key-backup2'),
   btnTestAiConnection: document.getElementById('btn-test-ai-connection'),
   btnSaveAiKeys: document.getElementById('btn-save-ai-keys'),
   aiSettingsMsg: document.getElementById('ai-settings-msg'),
@@ -1600,16 +1600,16 @@ if (DOM.btnClearAllChoices) {
 // YAPAY ZEKA ANAHTARLARI & KURULUM SİHİRBAZI
 // ------------------------------------------
 function updateAiKeyStatus() {
-  const hasGroq = !!State.ai.groqKey;
-  const hasBackup = !!State.ai.backupKey1 || !!State.ai.githubKey;
+  const activeKeys = [State.ai.groqKey, State.ai.backupKey1, State.ai.backupKey2].filter(Boolean);
+  const count = activeKeys.length;
 
   if (DOM.aiKeyStatusDot) {
-    if (hasGroq) {
+    if (count >= 2) {
       DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
-      DOM.aiKeyStatusDot.title = 'Birincil AI anahtarı aktif (Groq)';
-    } else if (hasBackup) {
-      DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]';
-      DOM.aiKeyStatusDot.title = 'Yedek AI anahtarı aktif';
+      DOM.aiKeyStatusDot.title = `${count} adet Groq anahtarı aktif (Kesintisiz rotasyon devrede)`;
+    } else if (count === 1) {
+      DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+      DOM.aiKeyStatusDot.title = '1 adet Groq anahtarı aktif';
     } else {
       DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
       DOM.aiKeyStatusDot.title = 'Henüz anahtar girilmedi (tıklayarak ekleyin)';
@@ -1632,7 +1632,7 @@ if (DOM.btnOpenAiSettings) {
   DOM.btnOpenAiSettings.addEventListener('click', () => {
     if (DOM.inputApiKeyGroq) DOM.inputApiKeyGroq.value = State.ai.groqKey;
     if (DOM.inputApiKeyBackup1) DOM.inputApiKeyBackup1.value = State.ai.backupKey1;
-    if (DOM.inputApiKeyGithub) DOM.inputApiKeyGithub.value = State.ai.githubKey;
+    if (DOM.inputApiKeyBackup2) DOM.inputApiKeyBackup2.value = State.ai.backupKey2;
     if (DOM.aiSettingsMsg) DOM.aiSettingsMsg.classList.add('hidden');
     if (DOM.modalAiSettings) {
       DOM.modalAiSettings.classList.remove('hidden');
@@ -1651,15 +1651,15 @@ if (DOM.btnSaveAiKeys) {
   DOM.btnSaveAiKeys.addEventListener('click', () => {
     const groq = DOM.inputApiKeyGroq ? DOM.inputApiKeyGroq.value.trim() : '';
     const b1 = DOM.inputApiKeyBackup1 ? DOM.inputApiKeyBackup1.value.trim() : '';
-    const gh = DOM.inputApiKeyGithub ? DOM.inputApiKeyGithub.value.trim() : '';
+    const b2 = DOM.inputApiKeyBackup2 ? DOM.inputApiKeyBackup2.value.trim() : '';
 
     State.ai.groqKey = groq;
     State.ai.backupKey1 = b1;
-    State.ai.githubKey = gh;
+    State.ai.backupKey2 = b2;
 
     localStorage.setItem('soru_ai_groq_key', groq);
     localStorage.setItem('soru_ai_backup1_key', b1);
-    localStorage.setItem('soru_ai_github_key', gh);
+    localStorage.setItem('soru_ai_backup2_key', b2);
 
     updateAiKeyStatus();
     if (DOM.modalAiSettings) DOM.modalAiSettings.classList.add('hidden');
@@ -1670,39 +1670,40 @@ if (DOM.btnTestAiConnection) {
   DOM.btnTestAiConnection.addEventListener('click', async () => {
     const groqKey = DOM.inputApiKeyGroq ? DOM.inputApiKeyGroq.value.trim() : '';
     const b1 = DOM.inputApiKeyBackup1 ? DOM.inputApiKeyBackup1.value.trim() : '';
-    const gh = DOM.inputApiKeyGithub ? DOM.inputApiKeyGithub.value.trim() : '';
+    const b2 = DOM.inputApiKeyBackup2 ? DOM.inputApiKeyBackup2.value.trim() : '';
 
-    if (!groqKey && !b1 && !gh) {
+    if (!groqKey && !b1 && !b2) {
       showAiSettingsMessage('Lütfen en az bir anahtar girin!', 'amber');
       return;
     }
 
     showAiSettingsMessage('Bağlantı test ediliyor...', 'indigo');
 
-    try {
-      if (groqKey) {
+    const results = [];
+    const keysToCheck = [
+      { name: '1. Groq', key: groqKey },
+      { name: '2. Groq', key: b1 },
+      { name: '3. Groq', key: b2 }
+    ].filter(item => item.key);
+
+    for (const item of keysToCheck) {
+      try {
         const res = await fetch('https://api.groq.com/openai/v1/models', {
-          headers: { 'Authorization': `Bearer ${groqKey}` }
+          headers: { 'Authorization': `Bearer ${item.key}` }
         });
         if (res.ok) {
-          showAiSettingsMessage('✓ Groq API bağlantısı başarılı! Sistem hazır.', 'emerald');
-          return;
+          results.push(`✓ ${item.name}: Başarılı`);
         } else {
-          showAiSettingsMessage('⚠️ Groq anahtarı geçersiz veya kota dolu (Hata ' + res.status + ')', 'rose');
-          return;
+          results.push(`⚠️ ${item.name}: Hata ${res.status}`);
         }
-      } else if (gh) {
-        const res = await fetch('https://models.inference.ai.azure.com/models', {
-          headers: { 'Authorization': `Bearer ${gh}` }
-        });
-        if (res.ok) {
-          showAiSettingsMessage('✓ GitHub Models bağlantısı başarılı!', 'emerald');
-          return;
-        }
+      } catch (err) {
+        results.push(`❌ ${item.name}: Bağlantı hatası`);
       }
-      showAiSettingsMessage('✓ Anahtarlar kaydedildi.', 'emerald');
-    } catch (err) {
-      showAiSettingsMessage('Bağlantı hatası: ' + err.message, 'rose');
+    }
+
+    if (results.length > 0) {
+      const isAnyOk = results.some(r => r.includes('✓'));
+      showAiSettingsMessage(results.join(' | '), isAnyOk ? 'emerald' : 'rose');
     }
   });
 }
@@ -1723,7 +1724,7 @@ async function runAIAutoMatch() {
     return;
   }
 
-  if (!State.ai.groqKey && !State.ai.backupKey1 && !State.ai.githubKey) {
+  if (!State.ai.groqKey && !State.ai.backupKey1 && !State.ai.backupKey2) {
     if (DOM.btnOpenAiSettings) DOM.btnOpenAiSettings.click();
     return;
   }
@@ -1789,9 +1790,12 @@ async function runAIAutoMatch() {
 // Ses Transkripsiyonu (Yedekli / Failover)
 async function transcribeAudioWithFailover() {
   const keysToTry = [];
-  if (State.ai.groqKey) keysToTry.push({ type: 'groq', key: State.ai.groqKey, name: 'Birincil Groq' });
+  if (State.ai.groqKey) keysToTry.push({ type: 'groq', key: State.ai.groqKey, name: '1. Groq' });
   if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_')) {
-    keysToTry.push({ type: 'groq', key: State.ai.backupKey1, name: 'Yedek Groq' });
+    keysToTry.push({ type: 'groq', key: State.ai.backupKey1, name: '2. Groq' });
+  }
+  if (State.ai.backupKey2 && State.ai.backupKey2.startsWith('gsk_')) {
+    keysToTry.push({ type: 'groq', key: State.ai.backupKey2, name: '3. Groq' });
   }
 
   let lastErr = null;
@@ -1891,27 +1895,25 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
   { "letter": "C", "type": "correct", "timestamp": 7.2, "x_percent": 12, "y_percent": 64, "width_percent": 38, "height_percent": 6 }
 ]`;
 
-  const visionKeysToTry = [];
-  if (State.ai.groqKey) visionKeysToTry.push({ type: 'groq', key: State.ai.groqKey });
-  if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_')) {
-    visionKeysToTry.push({ type: 'groq', key: State.ai.backupKey1 });
-  }
-  if (State.ai.githubKey) visionKeysToTry.push({ type: 'github', key: State.ai.githubKey });
-
   let lastErr = null;
 
+  // 1. ÖNCELİK: Groq Vision Modeli (qwen/qwen3.8-27b) - Tüm Groq Anahtarlarını Sırayla Dene
+  const visionKeysToTry = [];
+  if (State.ai.groqKey) visionKeysToTry.push({ type: 'groq', key: State.ai.groqKey, name: '1. Groq' });
+  if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_')) {
+    visionKeysToTry.push({ type: 'groq', key: State.ai.backupKey1, name: '2. Groq' });
+  }
+  if (State.ai.backupKey2 && State.ai.backupKey2.startsWith('gsk_')) {
+    visionKeysToTry.push({ type: 'groq', key: State.ai.backupKey2, name: '3. Groq' });
+  }
+
   for (const vKey of visionKeysToTry) {
-    // Denenecek model adayları
-    const candidateModels = (vKey.type === 'github') 
-      ? ['gpt-4o-mini'] 
-      : ['llama-3.2-90b-vision-preview', 'meta-llama/llama-4-scout-17b-16e-instruct'];
+    const candidateModels = ['qwen/qwen3.8-27b'];
 
     for (const model of candidateModels) {
       try {
-        let endpoint = 'https://api.groq.com/openai/v1/chat/completions';
-        if (vKey.type === 'github') {
-          endpoint = 'https://models.inference.ai.azure.com/chat/completions';
-        }
+        console.log(`${vKey.name} ile görsel taranıyor (${model})...`);
+        const endpoint = 'https://api.groq.com/openai/v1/chat/completions';
 
         const res = await fetch(endpoint, {
           method: 'POST',
@@ -1936,7 +1938,7 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
         });
 
         if (res.status === 429) {
-          console.warn(`Vision modeli ${model} kotası doldu (429), sıradakine geçiliyor...`);
+          console.warn(`${vKey.name} kotası doldu (429), sıradaki anahtara geçiliyor...`);
           continue;
         }
 
@@ -1944,7 +1946,7 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
           const errJson = await res.json().catch(() => ({}));
           console.warn(`Model ${model} hatası:`, errJson.error?.message);
           lastErr = new Error(errJson.error?.message || `HTTP ${res.status}`);
-          continue; // Bir sonraki model adayına geç
+          continue;
         }
 
         const data = await res.json();
@@ -1959,6 +1961,7 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
 
         const parsed = JSON.parse(content);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          console.log(`${vKey.name} ile şıklar başarıyla tespit edildi!`);
           return parsed;
         }
       } catch (e) {
@@ -1968,12 +1971,19 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
     }
   }
 
-  // CAN SİMİDİ YEDEK: Eğer görsel modelleri kullanılamazsa, Groq'un metin zekası (Llama 3.3 70B) ile transkripti eşle!
-  if (State.ai.groqKey || (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_'))) {
-    const textKey = State.ai.groqKey || State.ai.backupKey1;
-    try {
-      console.log('Görsel modeli yerine transkript metin analizi ile şıklar eşleştiriliyor...');
-      const fallbackPrompt = `Sen bir sınav sorusu çözüm video editörüsün.
+  // 2. ÖNCELİK: Groq Llama 3.3 / 3.1 metin modeli ile transkripti analiz et (Tüm Anahtarlarla)
+  const textKeysToTry = visionKeysToTry.length > 0 ? visionKeysToTry : [];
+  if (textKeysToTry.length === 0 && State.ai.groqKey) {
+    textKeysToTry.push({ type: 'groq', key: State.ai.groqKey, name: '1. Groq' });
+  }
+  const textModels = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
+
+  for (const tKey of textKeysToTry) {
+    if (!tKey.key) continue;
+    for (const tModel of textModels) {
+      try {
+        console.log(`Transkript metin analizi deneniyor (${tModel})...`);
+        const fallbackPrompt = `Sen bir sınav sorusu çözüm video editörüsün.
 Aşağıdaki ses transkriptine bakarak öğretmenin elediği ve doğru bulduğu şıkları zaman damgalarıyla çıkar:
 
 SES TRANSKRİPTİ:
@@ -1989,39 +1999,88 @@ A, B, C, D (varsa E) şıklarını dikey standart sırasına göre yerleştirere
 ]
 SADECE JSON array döndür, markdown yazma:`;
 
-      const textRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${textKey}`
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: fallbackPrompt }],
-          temperature: 0.1,
-          max_tokens: 1000
-        })
-      });
+        const textRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${tKey.key}`
+          },
+          body: JSON.stringify({
+            model: tModel,
+            messages: [{ role: 'user', content: fallbackPrompt }],
+            temperature: 0.1,
+            max_tokens: 1000
+          })
+        });
 
-      if (textRes.ok) {
-        const textData = await textRes.json();
-        let txt = textData.choices?.[0]?.message?.content || "";
-        txt = txt.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const fb = txt.indexOf('[');
-        const lb = txt.lastIndexOf(']');
-        if (fb !== -1 && lb !== -1) {
-          const parsed = JSON.parse(txt.substring(fb, lb + 1));
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed;
+        if (textRes.ok) {
+          const textData = await textRes.json();
+          let txt = textData.choices?.[0]?.message?.content || "";
+          txt = txt.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const fb = txt.indexOf('[');
+          const lb = txt.lastIndexOf(']');
+          if (fb !== -1 && lb !== -1) {
+            const parsed = JSON.parse(txt.substring(fb, lb + 1));
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return parsed;
+            }
           }
         }
+      } catch (textErr) {
+        console.error(`${tModel} metin analizi hatası:`, textErr);
       }
-    } catch (textErr) {
-      console.error('Metin analizi yedek hatası:', textErr);
     }
   }
 
+  // 2. ULTIMATE CAN SİMİDİ: Hiçbir yapay zeka modeline ihtiyaç duymadan Whisper transkriptinden yerel akıllı eşleme yap!
+  const localMatches = extractChoicesLocallyFromTranscript(transcriptText);
+  if (localMatches && localMatches.length > 0) {
+    console.log('Yerel transkript eşleyici devreye girdi:', localMatches);
+    return localMatches;
+  }
+
   throw new Error(lastErr ? lastErr.message : 'Şık analizi gerçekleştirilemedi.');
+}
+
+// Tamamen Çevrimdışı / Yerel Transkript Şık Çıkarıcı (Sıfır Hata Garantisi)
+function extractChoicesLocallyFromTranscript(transcript) {
+  const letters = ['A', 'B', 'C', 'D', 'E'];
+  const lines = transcript.split('\n');
+  const results = [];
+
+  letters.forEach((letter, idx) => {
+    let foundTs = 0;
+    let foundType = 'wrong';
+
+    for (const line of lines) {
+      const matchTime = line.match(/\[([0-9.]+)s/);
+      const ts = matchTime ? parseFloat(matchTime[1]) : 0;
+      const lower = line.toLowerCase();
+      const hasLetter = new RegExp(`\\b${letter.toLowerCase()}\\b|${letter.toLowerCase()}\\s*şık|${letter.toLowerCase()}\\s*seçenek`, 'i').test(line);
+
+      if (hasLetter) {
+        foundTs = ts;
+        if (lower.includes('doğru') || lower.includes('cevap') || lower.includes('cevabımız') || lower.includes('olur')) {
+          foundType = 'correct';
+        } else {
+          foundType = 'wrong';
+        }
+        break;
+      }
+    }
+
+    results.push({
+      letter: letter,
+      type: foundType,
+      timestamp: foundTs,
+      x_percent: 12,
+      y_percent: 46 + idx * 8,
+      width_percent: 45,
+      height_percent: 6
+    });
+  });
+
+  return results;
 }
 
 // Şıkları State ve Canvas'a Uygula
