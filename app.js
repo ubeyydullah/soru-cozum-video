@@ -1539,8 +1539,7 @@ function updateSmartAssistantUI() {
       DOM.targetChoiceLetter.className = 'font-bold font-mono text-xs text-zinc-950 bg-emerald-400 px-2 py-0.5 rounded shadow-sm animate-pulse';
     }
     if (DOM.smartAssistantStatus) {
-      const eHint = curTarget.choiceLetter === 'E' ? ' <span class="text-amber-300 font-semibold">(veya "Dolayısıyla" ifadesi)</span>' : '';
-      DOM.smartAssistantStatus.innerHTML = `🎯 Sıradaki: <strong class="text-white bg-emerald-500/30 px-1.5 py-0.5 rounded font-mono">${curTarget.choiceLetter} Şıkkı</strong>${eHint} — Dinlerken yanlışsa <strong class="text-rose-400">[X]</strong>, doğruysa <strong class="text-emerald-400">[M]</strong> basın. (${choices.length - pending.length}/${choices.length} tamamlandı)`;
+      DOM.smartAssistantStatus.innerHTML = `🎯 Sıradaki: <strong class="text-white bg-emerald-500/30 px-1.5 py-0.5 rounded font-mono">${curTarget.choiceLetter} Şıkkı</strong> — Dinlerken yanlışsa <strong class="text-rose-400">[X]</strong>, doğruysa <strong class="text-emerald-400">[M]</strong> basın. (${choices.length - pending.length}/${choices.length} tamamlandı)`;
     }
   } else {
     if (DOM.targetChoiceBadge) {
@@ -1882,6 +1881,9 @@ async function runAIAutoMatch() {
       transcriptText = whisperResult.text || "";
     }
 
+    State.audio.segments = segments;
+    State.audio.transcriptText = transcriptText;
+
     // 2. ADIM: Görseli ve Şıkları İncele (Vision Bounding Box & Eşleme)
     if (DOM.smartAssistantStatus) {
       DOM.smartAssistantStatus.innerHTML = `🔍 <strong class="text-indigo-400">Adım 2/2:</strong> Soru şıkları (A, B, C, D) taranıyor ve sesle eşleştiriliyor...`;
@@ -2013,8 +2015,8 @@ ${transcriptText || "Transkript bulunamadı."}
 EŞLEME KURALLARI:
 1. Öğretmenin elediği / yanlış dediği şıklar için: "type": "wrong".
 2. Öğretmenin doğru dediği / cevabı ilan ettiği şık için: "type": "correct".
-3. timestamp değerini öğretmenin o şıktan bahsettiği saniye (ondalıklı sayı, örn: 3.4) olarak ata.
-4. ÖNEMLİ E ŞIKKI TETİKLEYİCİSİ: Öğretmen son şık olan E şıkkı için doğrudan "E şıkkı" demeyebilir. Transkriptte geçen "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") kelimesi E şıkkının başlangıç tetikleyicisidir. "Dolayısıyla" kelimesinin söylendiği saniyeyi E şıkkının timestamp'i olarak ata ve bu şıkkı "type": "correct" olarak belirle!
+3. timestamp değerini öğretmenin o şıktan bahsettiği ("A şıkkı", "B şıkkı", "E şıkkı") saniye olarak ata.
+4. ÖNEMLİ E ŞIKKI KARAR ANI (VERDICT): E şıkkından sonra başka bir şık gelmediği için, E şıkkının doğru/yanlış karar vurgusu transkriptte geçen "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") ifadesiyle yapılır. Öğretmenin "Dolayısıyla" kelimesini söylediği saniyeyi E şıkkı için "verdict_timestamp" olarak ata!
 5. Eğer bir şıktan hiç bahsedilmediyse timestamp: 0 ver.
 
 ÇIKTI FORMATI:
@@ -2022,7 +2024,7 @@ SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonun
 [
   { "letter": "A", "type": "wrong", "timestamp": 2.1, "x_percent": 12, "y_percent": 48, "width_percent": 38, "height_percent": 6 },
   { "letter": "B", "type": "wrong", "timestamp": 4.5, "x_percent": 12, "y_percent": 56, "width_percent": 38, "height_percent": 6 },
-  { "letter": "C", "type": "correct", "timestamp": 7.2, "x_percent": 12, "y_percent": 64, "width_percent": 38, "height_percent": 6 }
+  { "letter": "E", "type": "correct", "timestamp": 11.2, "verdict_timestamp": 13.8, "x_percent": 12, "y_percent": 80, "width_percent": 38, "height_percent": 6 }
 ]`;
 
   let lastErr = null;
@@ -2120,13 +2122,13 @@ SES TRANSKRİPTİ:
 ${transcriptText}
 
 GÖREV VE ÖNEMLİ KURALLAR:
-1. A, B, C, D ve E şıklarını zaman damgalarıyla çıkar.
-2. ÖNEMLİ: Son şık olan E için öğretmen "E şıkkı" demeyebilir. Transkriptte "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") ifadesinin geçtiği an E şıkkının başlangıç zamanıdır (timestamp). "Dolayısıyla" kelimesinin saniyesini E şıkkının timestamp'i olarak ata ve type: "correct" yap.
+1. A, B, C, D ve E şıklarını başlangıç zaman damgalarıyla (timestamp) çıkar.
+2. ÖNEMLİ E ŞIKKI KARAR ANI: E şıkkından sonra başka bir şık gelmediği için, E şıkkının doğru/yanlış karar vurgusu transkriptte geçen "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") ifadesiyle yapılır. Öğretmenin "Dolayısıyla" dediği anı tespit et ve E şıkkı için "verdict_timestamp" olarak ata!
 3. A, B, C, D (varsa E) şıklarını dikey standart sırasına göre yerleştirerek şu formatta bir JSON array döndür:
 [
   { "letter": "A", "type": "wrong", "timestamp": 2.1, "x_percent": 12, "y_percent": 48, "width_percent": 45, "height_percent": 6 },
   { "letter": "B", "type": "wrong", "timestamp": 4.5, "x_percent": 12, "y_percent": 56, "width_percent": 45, "height_percent": 6 },
-  { "letter": "E", "type": "correct", "timestamp": 12.8, "x_percent": 12, "y_percent": 76, "width_percent": 45, "height_percent": 6 }
+  { "letter": "E", "type": "correct", "timestamp": 11.2, "verdict_timestamp": 13.8, "x_percent": 12, "y_percent": 76, "width_percent": 45, "height_percent": 6 }
 ]
 SADECE JSON array döndür, markdown yazma:`;
 
@@ -2347,6 +2349,18 @@ function extractChoicesLocallyFromTranscript(transcript) {
   const results = [];
   const visualBoxes = detectVisualChoiceBoxesFromImage(State.image.element, letters.length);
 
+  // Transkriptte geçen "Dolayısıyla" saniyesini tespit et (E şıkkının karar anı için)
+  let dolayisiylaTs = 0;
+  for (const line of lines) {
+    if (/dolayısıyla|dolayisiyla|dolayisiyle/i.test(line)) {
+      const matchTime = line.match(/\[([0-9.]+)s/);
+      if (matchTime) {
+        dolayisiylaTs = parseFloat(matchTime[1]);
+        break;
+      }
+    }
+  }
+
   letters.forEach((letter, idx) => {
     let foundTs = 0;
     let foundType = 'wrong';
@@ -2355,24 +2369,26 @@ function extractChoicesLocallyFromTranscript(transcript) {
       const matchTime = line.match(/\[([0-9.]+)s/);
       const ts = matchTime ? parseFloat(matchTime[1]) : 0;
       const lower = line.toLowerCase();
-      let hasLetter = new RegExp(`\\b${letter.toLowerCase()}\\b|${letter.toLowerCase()}\\s*şık|${letter.toLowerCase()}\\s*seçenek`, 'i').test(line);
-
-      // E şıkkı için özel tetikleyici: "Dolayısıyla"
-      if (letter === 'E' && !hasLetter) {
-        hasLetter = /dolayısıyla|dolayisiyla|dolayisiyle/i.test(line);
-      }
+      // Şıkkın doğrudan kendi harfi veya adı ile başlangıcını tespit et (E şıkkı için de aynı)
+      const hasLetter = new RegExp(`\\b${letter.toLowerCase()}\\b|${letter.toLowerCase()}\\s*şık|${letter.toLowerCase()}\\s*seçenek`, 'i').test(line);
 
       if (hasLetter) {
         foundTs = ts;
-        // Eğer E şıkkı "Dolayısıyla" ile tetiklendiyse veya metinde doğru/cevap geçiyorsa doğru şık olarak kabul edilir
-        if (letter === 'E' && /dolayısıyla|dolayisiyla|dolayisiyle/i.test(line)) {
-          foundType = 'correct';
-        } else if (lower.includes('doğru') || lower.includes('cevap') || lower.includes('cevabımız') || lower.includes('olur')) {
+        if (lower.includes('doğru') || lower.includes('cevap') || lower.includes('cevabımız') || lower.includes('olur')) {
           foundType = 'correct';
         } else {
           foundType = 'wrong';
         }
         break;
+      }
+    }
+
+    // E şıkkının doğru/yanlış karar vurgusu: Transkriptteki "Dolayısıyla" kelimesiyle yapılır!
+    let choiceVerdictTs = null;
+    if (letter === 'E') {
+      if (dolayisiylaTs > 0 && dolayisiylaTs >= foundTs) {
+        choiceVerdictTs = dolayisiylaTs;
+        foundType = 'correct'; // "Dolayısıyla" ifadesi doğru sonuca bağlar
       }
     }
 
@@ -2382,6 +2398,7 @@ function extractChoicesLocallyFromTranscript(transcript) {
       letter: letter,
       type: foundType,
       timestamp: foundTs,
+      verdict_timestamp: choiceVerdictTs,
       x_percent: vb ? vb.x_percent : 12,
       y_percent: vb ? vb.y_percent : (46 + idx * 8),
       width_percent: vb ? vb.width_percent : 45,
@@ -2433,6 +2450,7 @@ function applyMatchedChoicesToState(matchedChoices) {
         height: boxH,
       },
       timestamp: ts,
+      verdictTimestamp: (item.verdict_timestamp && parseFloat(item.verdict_timestamp) > 0) ? parseFloat(item.verdict_timestamp) : null,
       color: isCorrect ? '#22c55e' : '#ef4444',
       opacity: State.highlight.opacity || 0.30,
       borderWidth: State.highlight.borderWidth || 4,
@@ -2477,6 +2495,36 @@ function easeOutBack(x) {
 
 function easeOutQuad(x) {
   return 1 - (1 - x) * (1 - x);
+}
+
+/**
+ * Ses transkriptinden veya parçalarından "Dolayısıyla" kelimesinin saniyesini döndürür
+ * @param {number} minTime Arama yapılacak minimum başlangıç saniyesi
+ * @returns {number|null}
+ */
+function getDolayisiylaTimestamp(minTime = 0) {
+  if (State.audio.segments && State.audio.segments.length > 0) {
+    for (const seg of State.audio.segments) {
+      if ((seg.start >= minTime - 0.5) && /dolayısıyla|dolayisiyla|dolayisiyle/i.test(seg.text)) {
+        return Math.max(0, parseFloat(seg.start.toFixed(2)));
+      }
+    }
+  }
+
+  if (State.audio.transcriptText) {
+    const lines = State.audio.transcriptText.split('\n');
+    for (const line of lines) {
+      if (/dolayısıyla|dolayisiyla|dolayisiyle/i.test(line)) {
+        const match = line.match(/\[([0-9.]+)s/);
+        if (match) {
+          const ts = parseFloat(match[1]);
+          if (ts >= minTime - 0.5) return ts;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -2617,14 +2665,33 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
 
         for (let i = 0; i < validChoices.length; i++) {
           const choice = validChoices[i];
-          const start = choice.timestamp || 0;
-          const nextStart = (i < validChoices.length - 1)
+          const isLastChoice = (i === validChoices.length - 1);
+          const nextStart = !isLastChoice
             ? (validChoices[i + 1].timestamp || (start + 4.0))
             : (State.audio.duration || (start + 5.0));
           const duration = Math.max(0.8, nextStart - start);
           const ratio = State.choiceLayout.verdictRatio || 0.65;
-          const verdictDelay = choice.verdictDelay ?? Math.max(0.5, Math.min(duration - 0.6, duration * ratio));
-          const verdictTime = start + verdictDelay;
+
+          // Karar Zamanı (Verdict) Belirleme:
+          let verdictTime;
+          if (choice.verdictTimestamp && choice.verdictTimestamp > start) {
+            // E şıkkı veya herhangi bir şık için transkriptten "Dolayısıyla" veya özel karar anı atanmışsa:
+            verdictTime = choice.verdictTimestamp;
+          } else if (isLastChoice) {
+            // Son şık (E şıkkı): Sonrasında başka şık gelmediği için kalan videoyu boşuna bekletme!
+            // Eğer transkriptte "Dolayısıyla" kelimesi varsa dinamik olarak saniyesini yakala:
+            const dTs = getDolayisiylaTimestamp(start);
+            if (dTs && dTs > start) {
+              choice.verdictTimestamp = dTs;
+              verdictTime = dTs;
+            } else {
+              // Bulunamazsa en fazla 2.5-3 saniye sonra doğru/yanlış karar vurgusunu yap:
+              verdictTime = start + Math.min(2.5, Math.max(0.8, duration * ratio));
+            }
+          } else {
+            const verdictDelay = choice.verdictDelay ?? Math.max(0.5, Math.min(duration - 0.6, duration * ratio));
+            verdictTime = start + verdictDelay;
+          }
 
           const bx = choice.box.x * scale;
           const by = choice.box.y * scale;
