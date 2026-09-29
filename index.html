@@ -54,6 +54,12 @@
 
     <!-- Hızlı Aksiyon Butonları -->
     <div class="flex items-center gap-2.5">
+      <button id="btn-open-ai-settings" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-violet-500/15 hover:bg-violet-500/25 text-violet-300 border border-violet-500/30 transition-all shadow-sm">
+        <i data-lucide="bot" class="w-3.5 h-3.5 text-violet-400"></i>
+        <span>AI Anahtarları</span>
+        <span id="ai-key-status-dot" class="w-2 h-2 rounded-full bg-zinc-600" title="Anahtar Durumu"></span>
+      </button>
+
       <button id="btn-load-demo" class="flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 transition-all shadow-sm">
         <i data-lucide="sparkles" class="w-4 h-4"></i>
         <span>Örnek Demo Yükle</span>
@@ -181,29 +187,68 @@
         </div>
       </div>
 
-      <!-- Akıllı Şık Asistanı (Tıkla-Sar & Hızlı Kurgu) -->
-      <div id="smart-choice-assistant" class="bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-900 border border-emerald-500/30 rounded-2xl p-3 flex flex-col md:flex-row items-center justify-between gap-3 shadow-lg">
-        <div class="flex items-center gap-2.5 w-full md:w-auto">
-          <div class="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 flex-shrink-0">
-            <i data-lucide="sparkles" class="w-4 h-4"></i>
-          </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <h4 class="text-xs font-bold text-white tracking-wide">Akıllı Şık Asistanı</h4>
-              <span class="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30">Hızlı Kurgu Modu</span>
+      <!-- Akıllı Şık Asistanı (AI Otomatik Eşleme & Manuel Can Simidi) -->
+      <div id="smart-choice-assistant" class="bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-900 border border-violet-500/30 rounded-2xl p-3 flex flex-col gap-2.5 shadow-lg">
+        <div class="flex flex-col md:flex-row items-center justify-between gap-3">
+          <div class="flex items-center gap-2.5 w-full md:w-auto">
+            <div class="w-8 h-8 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-400 flex-shrink-0">
+              <i data-lucide="sparkles" class="w-4 h-4"></i>
             </div>
-            <p id="smart-assistant-status" class="text-[11px] text-zinc-400">
-              Görseldeki şıkka tıklayarak sarın; ses çalarken <kbd class="px-1 bg-zinc-800 text-rose-300 rounded font-mono text-[10px]">X</kbd> (Ele) ve <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">M</kbd> (Doğrula) ile zamanlayın.
-            </p>
+            <div>
+              <div class="flex items-center gap-2">
+                <h4 class="text-xs font-bold text-white tracking-wide">Akıllı Şık Asistanı</h4>
+                <span id="ai-status-badge" class="text-[10px] px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 font-semibold border border-violet-500/30">AI + Manuel Mod</span>
+              </div>
+              <p id="smart-assistant-status" class="text-[11px] text-zinc-400">
+                Tek tıkla yapay zekaya analiz ettirin veya şıkka tıklayarak sarın; ses çalarken <kbd class="px-1 bg-zinc-800 text-rose-300 rounded font-mono text-[10px]">X</kbd> (Ele) ve <kbd class="px-1 bg-zinc-800 text-emerald-300 rounded font-mono text-[10px]">M</kbd> (Doğrula) ile zamanlayın.
+              </p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
+            <!-- ⚡ AI ile Otomatik Eşle -->
+            <button id="btn-ai-auto-match" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-violet-950/50" title="Yapay zeka sesi dinler, şıkları görselde bulur ve otomatik eşler">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-300"></i>
+              <span>⚡ AI ile Otomatik Eşle</span>
+            </button>
+
+            <!-- Tıkla-Sar (Sihirli Seçim) -->
+            <button id="btn-click-wrap" type="button" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm" title="Görselde şıkkın üzerine tıkladığınızda o şıkkı otomatik sarar">
+              <i data-lucide="wand-2" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <span>🪄 Tıkla-Sar</span>
+            </button>
           </div>
         </div>
 
-        <div class="flex items-center gap-2 w-full md:w-auto justify-end flex-wrap">
-          <!-- Tıkla-Sar (Sihirli Seçim) -->
-          <button id="btn-click-wrap" type="button" class="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/40 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm" title="Görselde şıkkın üzerine tıkladığınızda o şıkkı otomatik sarar">
-            <i data-lucide="wand-2" class="w-3.5 h-3.5 text-indigo-400"></i>
-            <span>🪄 Tıkla-Sar</span>
-          </button>
+        <!-- Manuel Can Simidi ve İnce Ayar Araçları (Ne Olur Ne Olmaz Çubuğu) -->
+        <div id="manual-tuning-bar" class="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-[11px] text-zinc-400 flex-wrap gap-2">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-zinc-500 font-medium flex items-center gap-1">
+              <i data-lucide="wrench" class="w-3 h-3 text-zinc-400"></i>
+              <span>Seçili Şık:</span>
+            </span>
+            <button id="btn-quick-correct" type="button" class="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-all font-medium flex items-center gap-1" title="Seçili şıkkı DOĞRU (✓) yap">
+              <span>✓ Doğru (M)</span>
+            </button>
+            <button id="btn-quick-wrong" type="button" class="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition-all font-medium flex items-center gap-1" title="Seçili şıkkı YANLIŞ (✕) yap">
+              <span>✕ Ele (X)</span>
+            </button>
+            <span class="h-3 w-px bg-zinc-800 mx-0.5"></span>
+            <button id="btn-nudge-prev-sec" type="button" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-all font-mono" title="Zamanı 0.1 saniye geriye al">
+              -0.1s
+            </button>
+            <button id="btn-nudge-next-sec" type="button" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 transition-all font-mono" title="Zamanı 0.1 saniye ileriye al">
+              +0.1s
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="text-zinc-500 hidden lg:inline">Kutuları canvas üzerinden tutup büyütebilir/taşıyabilirsiniz.</span>
+            <button id="btn-clear-all-choices" type="button" class="px-2 py-0.5 rounded bg-zinc-800/80 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-700/80 hover:border-red-500/30 transition-all flex items-center gap-1 text-[11px]" title="Tüm eklenmiş şıkları sil">
+              <i data-lucide="trash-2" class="w-3 h-3"></i>
+              <span>Tümünü Sil</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -746,6 +791,103 @@
         <i data-lucide="copy" class="w-4 h-4"></i>
         <span>Komutu Panoya Kopyala</span>
       </button>
+    </div>
+  </div>
+
+  <!-- YAPAY ZEKA AYARLARI VE ANAHTAR HAVUZU MODALI -->
+  <div id="modal-ai-settings" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-zinc-900 border border-violet-500/40 rounded-3xl max-w-xl w-full p-6 flex flex-col gap-5 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+      
+      <!-- Başlık -->
+      <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-violet-500/20 border border-violet-500/40 flex items-center justify-center text-violet-400">
+            <i data-lucide="bot" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-base text-white">Yapay Zeka Otomasyon Kurulumu</h3>
+            <p class="text-xs text-zinc-400">Ücretsiz API anahtarlarınızı bağlayın, tek tıkla şıkları ve sesleri eşleyin.</p>
+          </div>
+        </div>
+        <button id="btn-close-ai-settings" class="text-zinc-400 hover:text-white p-1 rounded-lg hover:bg-zinc-800 transition-colors">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Bilgi Kutusu -->
+      <div class="bg-violet-950/30 border border-violet-500/30 rounded-2xl p-3.5 flex items-start gap-3 text-xs text-violet-200">
+        <i data-lucide="info" class="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5"></i>
+        <div class="leading-relaxed">
+          <strong>Sıfır Ücret & Sıfır Risk:</strong> Belirtilen tüm anahtarlar <strong>tamamen ücretsizdir</strong> ve kredi kartı gerekmez. Anahtarlarınız hiçbir sunucuya gitmez, yalnızca kendi tarayıcınızda saklanır.
+        </div>
+      </div>
+
+      <!-- 1. Anahtar: Groq (Birincil - Önerilen) -->
+      <div class="space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-white flex items-center gap-1.5">
+            <span class="w-4 h-4 rounded-full bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center text-[10px]">1</span>
+            <span>Birincil Anahtar: Groq API Key</span>
+            <span class="text-[10px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 font-semibold rounded">Önerilen & Çok Hızlı</span>
+          </label>
+          <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer" class="text-[11px] font-semibold text-violet-400 hover:text-violet-300 underline flex items-center gap-1">
+            <span>Ücretsiz Anahtar Al ↗</span>
+          </a>
+        </div>
+        <p class="text-[11px] text-zinc-400 leading-relaxed">
+          Groq'a Google ile 1 tıkla giriş yapın, <strong>"Create API Key"</strong> butonuna basıp kodu buraya yapıştırın. (Hem sesi dinler, hem şıkları görür).
+        </p>
+        <div class="relative">
+          <input id="input-api-key-groq" type="password" placeholder="gsk_..." class="w-full bg-zinc-950 border border-zinc-800 focus:border-violet-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
+        </div>
+      </div>
+
+      <!-- 2. Anahtar: Yedek 1 (İkinci Groq veya Hugging Face) -->
+      <div class="space-y-2 pt-2 border-t border-zinc-800/80">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+            <span class="w-4 h-4 rounded-full bg-indigo-500/20 border border-indigo-500 text-indigo-400 flex items-center justify-center text-[10px]">2</span>
+            <span>1. Yedek Anahtar (Kotanız Biterse Devreye Girer)</span>
+          </label>
+          <span class="text-[10px] text-zinc-500 font-mono">İsteğe Bağlı</span>
+        </div>
+        <p class="text-[11px] text-zinc-400 leading-relaxed">
+          Farklı bir Google hesabıyla aldığınız <strong>2. Groq anahtarı</strong> veya <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener noreferrer" class="text-indigo-400 underline">Hugging Face Token</a>'ı ekleyebilirsiniz.
+        </p>
+        <input id="input-api-key-backup1" type="password" placeholder="İkinci Groq (gsk_...) veya Hugging Face (hf_...)" class="w-full bg-zinc-950 border border-zinc-800 focus:border-indigo-500 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
+      </div>
+
+      <!-- 3. Anahtar: Yedek 2 (GitHub Models - GPT-4o-mini) -->
+      <div class="space-y-2 pt-2 border-t border-zinc-800/80">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+            <span class="w-4 h-4 rounded-full bg-zinc-700 border border-zinc-600 text-zinc-300 flex items-center justify-center text-[10px]">3</span>
+            <span>2. Yedek: GitHub Models (GPT-4o-mini)</span>
+          </label>
+          <a href="https://github.com/settings/tokens" target="_blank" rel="noopener noreferrer" class="text-[11px] font-semibold text-zinc-400 hover:text-zinc-300 underline flex items-center gap-1">
+            <span>Token Al ↗</span>
+          </a>
+        </div>
+        <p class="text-[11px] text-zinc-400 leading-relaxed">
+          GitHub hesabınız varsa <strong>Personal Access Token (classic)</strong> girerek GPT-4o-mini görsel analizini yedek yapabilirsiniz.
+        </p>
+        <input id="input-api-key-github" type="password" placeholder="ghp_..." class="w-full bg-zinc-950 border border-zinc-800 focus:border-zinc-600 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-zinc-600 focus:outline-none transition-colors" />
+      </div>
+
+      <!-- Durum Mesajı & Butonlar -->
+      <div id="ai-settings-msg" class="text-xs font-medium p-2 rounded-xl hidden"></div>
+
+      <div class="flex items-center justify-end gap-3 pt-3 border-t border-zinc-800">
+        <button id="btn-test-ai-connection" type="button" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors flex items-center gap-1.5">
+          <i data-lucide="plug-zap" class="w-3.5 h-3.5 text-amber-400"></i>
+          <span>Bağlantıyı Test Et</span>
+        </button>
+        <button id="btn-save-ai-keys" type="button" class="px-4 py-2 rounded-xl text-xs font-bold bg-violet-600 hover:bg-violet-500 text-white transition-all shadow-md shadow-violet-950/50 flex items-center gap-1.5">
+          <i data-lucide="check" class="w-3.5 h-3.5"></i>
+          <span>Kaydet & Kapat</span>
+        </button>
+      </div>
+
     </div>
   </div>
 

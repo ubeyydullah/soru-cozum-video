@@ -18,13 +18,20 @@ Eğitim odaklı soru çözüm videoları (Reels, Shorts, TikTok ve YouTube video
    - **Kalıcılık:** İşaretlenen her seçenek kendi zaman damgasında (timestamp) devreye girer ve videonun sonuna kadar ekranda sabit kalır.
    - **Katman Listesi:** Eklenen tüm şıklar zaman çizelgesinde rozet olarak listelenir, tek tıkla seçilip düzenlenebilir veya silinebilir.
 
-3. **WebCodecs + Donanım Hızlandırmalı Render (2-3 Saniye!):**
+3. **⚡ AI ile Otomatik Eşleme (Zero-Cost / Ücretsiz Yapay Zeka):**
+   - **Groq Whisper + Vision:** Tek tıkla ses kaydını dinler, konuşmacının şıkları elediği ve doğruladığı anları yakalar, soru görselindeki koordinatlarla eşleştirir.
+   - **Otomatik Yedekli Anahtar Havuzu (Failover):** 1. anahtarın kotası biterse sistem hissettirmeden 2. veya 3. anahtara geçerek işlemi tamamlar.
+   - **%100 Ücretsiz:** Kredi kartı istemeyen ücretsiz Groq, Hugging Face veya GitHub Models anahtarlarıyla çalışır.
+
+4. **🛡️ Manuel Can Simidi ve Güvenlik Araçları:**
+   - Otomasyon sonrasında veya bağımsız olarak her an aktif:
+     - **🪄 Tıkla-Sar:** Şıkka tek dokunuşla tam çevreleme.
+     - **Hızlı Düzeltme:** Tek tıkla ✓ Doğru / ✕ Yanlış yapma, ±0.1s zaman kaydırma.
+     - **Canvas Tutamaçları:** İstediğiniz şıkkı tutup büyütme, küçültme veya yön tuşlarıyla piksel piksel taşıma.
+
+5. **WebCodecs + Donanım Hızlandırmalı Render (2-3 Saniye!):**
    - Standart gerçek zamanlı kayıt yerine doğrudan GPU video enkoderi (WebCodecs + MP4-Muxer) kullanılır.
    - 60 saniyelik bir video çıktısı ortalama 2-3 saniyede %100 çevrimdışı olarak MP4 formatında üretilir.
-
-4. **İstemci Taraflı Sıfır-Kurulum (Zero-Install & Zero-AI):**
-   - Node.js veya harici bir sunucu gerekmez. Çift tıklayarak veya `start.bat` ile anında açılır.
-   - Hiçbir API kotası veya token tüketimi yoktur.
 
 ---
 

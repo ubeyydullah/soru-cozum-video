@@ -34,6 +34,14 @@ const State = {
     height: 6,
   },
 
+  // Yapay Zeka Anahtarları ve Durumu
+  ai: {
+    groqKey: localStorage.getItem('soru_ai_groq_key') || '',
+    backupKey1: localStorage.getItem('soru_ai_backup1_key') || '',
+    githubKey: localStorage.getItem('soru_ai_github_key') || '',
+    isProcessing: false,
+  },
+
   // Aktif Seçili Kutu (Geriye dönük uyumluluk ve tutamaçlar için)
   box: {
     x: 0,
@@ -106,11 +114,29 @@ const DOM = {
   annotationsList: document.getElementById('annotations-list'),
   btnAddAnnotation: document.getElementById('btn-add-annotation'),
 
-  // Smart Choice Assistant
+  // Smart Choice Assistant & AI Automation
   btnClickWrap: document.getElementById('btn-click-wrap'),
+  btnAiAutoMatch: document.getElementById('btn-ai-auto-match'),
   smartAssistantStatus: document.getElementById('smart-assistant-status'),
   targetChoiceBadge: document.getElementById('target-choice-badge'),
   targetChoiceLetter: document.getElementById('target-choice-letter'),
+  btnQuickCorrect: document.getElementById('btn-quick-correct'),
+  btnQuickWrong: document.getElementById('btn-quick-wrong'),
+  btnNudgePrevSec: document.getElementById('btn-nudge-prev-sec'),
+  btnNudgeNextSec: document.getElementById('btn-nudge-next-sec'),
+  btnClearAllChoices: document.getElementById('btn-clear-all-choices'),
+
+  // AI Setup Modal
+  btnOpenAiSettings: document.getElementById('btn-open-ai-settings'),
+  modalAiSettings: document.getElementById('modal-ai-settings'),
+  btnCloseAiSettings: document.getElementById('btn-close-ai-settings'),
+  inputApiKeyGroq: document.getElementById('input-api-key-groq'),
+  inputApiKeyBackup1: document.getElementById('input-api-key-backup1'),
+  inputApiKeyGithub: document.getElementById('input-api-key-github'),
+  btnTestAiConnection: document.getElementById('btn-test-ai-connection'),
+  btnSaveAiKeys: document.getElementById('btn-save-ai-keys'),
+  aiSettingsMsg: document.getElementById('ai-settings-msg'),
+  aiKeyStatusDot: document.getElementById('ai-key-status-dot'),
 
   // Waveform & Audio
   btnAudioPlay: document.getElementById('btn-audio-play'),
@@ -1497,6 +1523,514 @@ function updateSmartAssistantUI() {
 if (DOM.btnClickWrap) {
   DOM.btnClickWrap.addEventListener('click', () => toggleClickWrapMode());
 }
+
+// ------------------------------------------
+// MANUEL CAN SİMİDİ & İNCE AYAR BUTONLARI (Ne Olur Ne Olmaz Araçları)
+// ------------------------------------------
+if (DOM.btnQuickCorrect) {
+  DOM.btnQuickCorrect.addEventListener('click', () => {
+    const ann = getActiveAnnotation();
+    if (ann) {
+      setToolType('correct');
+    } else if (State.annotations.length > 0) {
+      selectAnnotation(State.annotations[0].id);
+      setToolType('correct');
+    }
+  });
+}
+
+if (DOM.btnQuickWrong) {
+  DOM.btnQuickWrong.addEventListener('click', () => {
+    const ann = getActiveAnnotation();
+    if (ann) {
+      setToolType('wrong');
+    } else if (State.annotations.length > 0) {
+      selectAnnotation(State.annotations[0].id);
+      setToolType('wrong');
+    }
+  });
+}
+
+if (DOM.btnNudgePrevSec) {
+  DOM.btnNudgePrevSec.addEventListener('click', () => {
+    const ann = getActiveAnnotation();
+    if (ann) {
+      ann.timestamp = Math.max(0, parseFloat(((ann.timestamp || 0) - 0.1).toFixed(2)));
+      DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+      DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+      renderAnnotationsList();
+      renderCanvas();
+      updateFfmpegCommand();
+    }
+  });
+}
+
+if (DOM.btnNudgeNextSec) {
+  DOM.btnNudgeNextSec.addEventListener('click', () => {
+    const ann = getActiveAnnotation();
+    if (ann) {
+      ann.timestamp = Math.min(State.audio.duration || 9999, parseFloat(((ann.timestamp || 0) + 0.1).toFixed(2)));
+      DOM.badgeMarkedTime.textContent = formatTime(ann.timestamp);
+      DOM.inputTimestampManual.value = ann.timestamp.toFixed(2);
+      renderAnnotationsList();
+      renderCanvas();
+      updateFfmpegCommand();
+    }
+  });
+}
+
+if (DOM.btnClearAllChoices) {
+  DOM.btnClearAllChoices.addEventListener('click', () => {
+    if (State.annotations.length === 0) return;
+    if (confirm('Tüm şıkları ve vurguları silmek istediğinize emin misiniz?')) {
+      State.annotations = [];
+      State.activeAnnotationId = null;
+      State.box.active = false;
+      State.box.width = 0;
+      State.box.height = 0;
+      renderAnnotationsList();
+      renderCanvas();
+      updateRenderButtonState();
+      updateStepIndicator();
+    }
+  });
+}
+
+// ------------------------------------------
+// YAPAY ZEKA ANAHTARLARI & KURULUM SİHİRBAZI
+// ------------------------------------------
+function updateAiKeyStatus() {
+  const hasGroq = !!State.ai.groqKey;
+  const hasBackup = !!State.ai.backupKey1 || !!State.ai.githubKey;
+
+  if (DOM.aiKeyStatusDot) {
+    if (hasGroq) {
+      DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]';
+      DOM.aiKeyStatusDot.title = 'Birincil AI anahtarı aktif (Groq)';
+    } else if (hasBackup) {
+      DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-indigo-400 shadow-[0_0_8px_#818cf8]';
+      DOM.aiKeyStatusDot.title = 'Yedek AI anahtarı aktif';
+    } else {
+      DOM.aiKeyStatusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
+      DOM.aiKeyStatusDot.title = 'Henüz anahtar girilmedi (tıklayarak ekleyin)';
+    }
+  }
+}
+
+function showAiSettingsMessage(text, color = 'emerald') {
+  if (!DOM.aiSettingsMsg) return;
+  DOM.aiSettingsMsg.className = `text-xs font-semibold p-2.5 rounded-xl block ${
+    color === 'emerald' ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-500/40' :
+    color === 'rose' ? 'bg-rose-950/60 text-rose-300 border border-rose-500/40' :
+    'bg-indigo-950/60 text-indigo-300 border border-indigo-500/40'
+  }`;
+  DOM.aiSettingsMsg.textContent = text;
+  DOM.aiSettingsMsg.classList.remove('hidden');
+}
+
+if (DOM.btnOpenAiSettings) {
+  DOM.btnOpenAiSettings.addEventListener('click', () => {
+    if (DOM.inputApiKeyGroq) DOM.inputApiKeyGroq.value = State.ai.groqKey;
+    if (DOM.inputApiKeyBackup1) DOM.inputApiKeyBackup1.value = State.ai.backupKey1;
+    if (DOM.inputApiKeyGithub) DOM.inputApiKeyGithub.value = State.ai.githubKey;
+    if (DOM.aiSettingsMsg) DOM.aiSettingsMsg.classList.add('hidden');
+    if (DOM.modalAiSettings) {
+      DOM.modalAiSettings.classList.remove('hidden');
+      if (window.lucide) lucide.createIcons({ root: DOM.modalAiSettings });
+    }
+  });
+}
+
+if (DOM.btnCloseAiSettings) {
+  DOM.btnCloseAiSettings.addEventListener('click', () => {
+    if (DOM.modalAiSettings) DOM.modalAiSettings.classList.add('hidden');
+  });
+}
+
+if (DOM.btnSaveAiKeys) {
+  DOM.btnSaveAiKeys.addEventListener('click', () => {
+    const groq = DOM.inputApiKeyGroq ? DOM.inputApiKeyGroq.value.trim() : '';
+    const b1 = DOM.inputApiKeyBackup1 ? DOM.inputApiKeyBackup1.value.trim() : '';
+    const gh = DOM.inputApiKeyGithub ? DOM.inputApiKeyGithub.value.trim() : '';
+
+    State.ai.groqKey = groq;
+    State.ai.backupKey1 = b1;
+    State.ai.githubKey = gh;
+
+    localStorage.setItem('soru_ai_groq_key', groq);
+    localStorage.setItem('soru_ai_backup1_key', b1);
+    localStorage.setItem('soru_ai_github_key', gh);
+
+    updateAiKeyStatus();
+    if (DOM.modalAiSettings) DOM.modalAiSettings.classList.add('hidden');
+  });
+}
+
+if (DOM.btnTestAiConnection) {
+  DOM.btnTestAiConnection.addEventListener('click', async () => {
+    const groqKey = DOM.inputApiKeyGroq ? DOM.inputApiKeyGroq.value.trim() : '';
+    const b1 = DOM.inputApiKeyBackup1 ? DOM.inputApiKeyBackup1.value.trim() : '';
+    const gh = DOM.inputApiKeyGithub ? DOM.inputApiKeyGithub.value.trim() : '';
+
+    if (!groqKey && !b1 && !gh) {
+      showAiSettingsMessage('Lütfen en az bir anahtar girin!', 'amber');
+      return;
+    }
+
+    showAiSettingsMessage('Bağlantı test ediliyor...', 'indigo');
+
+    try {
+      if (groqKey) {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { 'Authorization': `Bearer ${groqKey}` }
+        });
+        if (res.ok) {
+          showAiSettingsMessage('✓ Groq API bağlantısı başarılı! Sistem hazır.', 'emerald');
+          return;
+        } else {
+          showAiSettingsMessage('⚠️ Groq anahtarı geçersiz veya kota dolu (Hata ' + res.status + ')', 'rose');
+          return;
+        }
+      } else if (gh) {
+        const res = await fetch('https://models.inference.ai.azure.com/models', {
+          headers: { 'Authorization': `Bearer ${gh}` }
+        });
+        if (res.ok) {
+          showAiSettingsMessage('✓ GitHub Models bağlantısı başarılı!', 'emerald');
+          return;
+        }
+      }
+      showAiSettingsMessage('✓ Anahtarlar kaydedildi.', 'emerald');
+    } catch (err) {
+      showAiSettingsMessage('Bağlantı hatası: ' + err.message, 'rose');
+    }
+  });
+}
+
+// ------------------------------------------
+// ⚡ AI İLE OTOMATİK EŞLEME MOTORU (Whisper + Vision + Failover)
+// ------------------------------------------
+async function runAIAutoMatch() {
+  if (State.ai.isProcessing) return;
+
+  if (!State.image.element) {
+    alert('Lütfen önce bir soru görseli yükleyin!');
+    return;
+  }
+
+  if (!State.audio.file) {
+    alert('Lütfen önce ses kaydını (MP3) yükleyin!');
+    return;
+  }
+
+  if (!State.ai.groqKey && !State.ai.backupKey1 && !State.ai.githubKey) {
+    if (DOM.btnOpenAiSettings) DOM.btnOpenAiSettings.click();
+    return;
+  }
+
+  State.ai.isProcessing = true;
+  const originalBtnHtml = DOM.btnAiAutoMatch ? DOM.btnAiAutoMatch.innerHTML : '';
+  if (DOM.btnAiAutoMatch) {
+    DOM.btnAiAutoMatch.disabled = true;
+    DOM.btnAiAutoMatch.innerHTML = `<span class="animate-spin inline-block mr-1">⏳</span> <span>Analiz Ediliyor...</span>`;
+  }
+
+  try {
+    // 1. ADIM: Sesi Dinle (Whisper Transkript + Zaman Damgaları)
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `⏳ <strong class="text-violet-400">Adım 1/2:</strong> Ses kaydı dinleniyor ve kelimeler saniyesine ayrılıyor...`;
+    }
+
+    const whisperResult = await transcribeAudioWithFailover();
+    const segments = whisperResult.segments || [];
+    let transcriptText = "";
+    if (segments.length > 0) {
+      transcriptText = segments
+        .map(s => `[${s.start.toFixed(1)}s - ${s.end.toFixed(1)}s]: "${s.text.trim()}"`)
+        .join("\n");
+    } else {
+      transcriptText = whisperResult.text || "";
+    }
+
+    // 2. ADIM: Görseli ve Şıkları İncele (Vision Bounding Box & Eşleme)
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `🔍 <strong class="text-indigo-400">Adım 2/2:</strong> Soru şıkları (A, B, C, D) taranıyor ve sesle eşleştiriliyor...`;
+    }
+
+    const base64Image = getOptimizedBase64Image();
+    const matchedChoices = await analyzeVisionWithFailover(base64Image, transcriptText);
+
+    if (!Array.isArray(matchedChoices) || matchedChoices.length === 0) {
+      throw new Error('Yapay zeka görselde belirgin bir şık düzeni tespit edemedi.');
+    }
+
+    // 3. ADIM: Tespit Edilen Şıkları Canvas'a ve Zaman Çizelgesine İşle
+    applyMatchedChoicesToState(matchedChoices);
+
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `🎉 <strong class="text-emerald-400">Harika! ${matchedChoices.length} şık otomatik tespit edildi ve eşlendi.</strong> İncelemek veya düzeltmek için şıklara tıklayabilirsiniz.`;
+    }
+
+  } catch (err) {
+    console.error('AI Otomasyon Hatası:', err);
+    if (DOM.smartAssistantStatus) {
+      DOM.smartAssistantStatus.innerHTML = `⚠️ <strong class="text-amber-400">Otomatik analiz tamamlanamadı:</strong> ${err.message}. <span class="text-zinc-400">Manuel araçlarla veya "Tıkla-Sar" ile kolayca devam edebilirsiniz.</span>`;
+    }
+    alert('Yapay zeka analizi sırasında bir sorun oluştu:\n' + err.message + '\n\nManuel araçları kullanarak şıkları işaretlemeye devam edebilirsiniz.');
+  } finally {
+    State.ai.isProcessing = false;
+    if (DOM.btnAiAutoMatch) {
+      DOM.btnAiAutoMatch.disabled = false;
+      DOM.btnAiAutoMatch.innerHTML = originalBtnHtml;
+    }
+  }
+}
+
+// Ses Transkripsiyonu (Yedekli / Failover)
+async function transcribeAudioWithFailover() {
+  const keysToTry = [];
+  if (State.ai.groqKey) keysToTry.push({ type: 'groq', key: State.ai.groqKey, name: 'Birincil Groq' });
+  if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_')) {
+    keysToTry.push({ type: 'groq', key: State.ai.backupKey1, name: 'Yedek Groq' });
+  }
+
+  let lastErr = null;
+
+  for (const k of keysToTry) {
+    try {
+      const formData = new FormData();
+      formData.append('file', State.audio.file);
+      formData.append('model', 'whisper-large-v3');
+      formData.append('response_format', 'verbose_json');
+      formData.append('language', 'tr');
+
+      const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${k.key}` },
+        body: formData
+      });
+
+      if (res.status === 429) {
+        console.warn(`${k.name} kotası doldu (429), bir sonraki anahtara geçiliyor...`);
+        continue;
+      }
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `Groq Hatası (${res.status})`);
+      }
+
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  // Hugging Face Whisper Yedek Denemesi
+  if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('hf_')) {
+    try {
+      const res = await fetch('https://api-inference.huggingface.co/models/openai/whisper-large-v3', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${State.ai.backupKey1}` },
+        body: State.audio.file
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+
+  throw new Error(lastErr ? lastErr.message : 'Ses analizi için geçerli bir anahtar bulunamadı.');
+}
+
+// Görsel Boyutunu Optimize Eden Helper (Payload'ı hafifletir)
+function getOptimizedBase64Image() {
+  const canvas = document.createElement('canvas');
+  const maxDim = 1200;
+  let w = State.image.naturalWidth;
+  let h = State.image.naturalHeight;
+  if (w > maxDim || h > maxDim) {
+    if (w > h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
+    else { w = Math.round(w * (maxDim / h)); h = maxDim; }
+  }
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(State.image.element, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+// Görsel ve Şık Eşleme (Yedekli / Failover)
+async function analyzeVisionWithFailover(base64Image, transcriptText) {
+  const prompt = `Sen profesyonel bir sınav sorusu çözüm ve video kurgu uzmanısın.
+Görseldeki soruya ve öğretmenin ses transkriptine bakarak şıkları tespit et ve zamanlamaları eşle.
+
+GÖRSELDEKİ ŞIKLAR:
+Görseldeki A, B, C, D (ve varsa E) seçeneklerinin koordinatlarını görselin genişlik ve yüksekliğine oranla yüzde (0-100) olarak belirle:
+- x_percent: sol kenardan mesafe yüzde (0-100)
+- y_percent: üst kenardan mesafe yüzde (0-100)
+- width_percent: kutunun genişliği yüzde (0-100)
+- height_percent: kutunun yüksekliği yüzde (0-100)
+
+SES TRANSKRİPTİ VE ZAMANLARI:
+${transcriptText || "Transkript bulunamadı."}
+
+EŞLEME KURALLARI:
+1. Öğretmenin elediği / yanlış dediği şıklar için: "type": "wrong".
+2. Öğretmenin doğru dediği / cevabı ilan ettiği şık için: "type": "correct".
+3. timestamp değerini öğretmenin o şıktan bahsettiği saniye (ondalıklı sayı, örn: 3.4) olarak ata.
+4. Eğer bir şıktan hiç bahsedilmediyse timestamp: 0 ver.
+
+ÇIKTI FORMATI:
+SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonunda markdown backtick (\`\`\`json) veya açıklama metni YAZMA:
+[
+  { "letter": "A", "type": "wrong", "timestamp": 2.1, "x_percent": 12, "y_percent": 48, "width_percent": 38, "height_percent": 6 },
+  { "letter": "B", "type": "wrong", "timestamp": 4.5, "x_percent": 12, "y_percent": 56, "width_percent": 38, "height_percent": 6 },
+  { "letter": "C", "type": "correct", "timestamp": 7.2, "x_percent": 12, "y_percent": 64, "width_percent": 38, "height_percent": 6 }
+]`;
+
+  const visionKeysToTry = [];
+  if (State.ai.groqKey) visionKeysToTry.push({ type: 'groq', key: State.ai.groqKey });
+  if (State.ai.backupKey1 && State.ai.backupKey1.startsWith('gsk_')) {
+    visionKeysToTry.push({ type: 'groq', key: State.ai.backupKey1 });
+  }
+  if (State.ai.githubKey) visionKeysToTry.push({ type: 'github', key: State.ai.githubKey });
+
+  let lastErr = null;
+
+  for (const vKey of visionKeysToTry) {
+    try {
+      let endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+      let model = 'llama-3.2-11b-vision-preview';
+
+      if (vKey.type === 'github') {
+        endpoint = 'https://models.inference.ai.azure.com/chat/completions';
+        model = 'gpt-4o-mini';
+      }
+
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${vKey.key}`
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: prompt },
+                { type: 'image_url', image_url: { url: base64Image } }
+              ]
+            }
+          ],
+          temperature: 0.1,
+          max_tokens: 1000
+        })
+      });
+
+      if (res.status === 429) {
+        console.warn(`Vision modeli ${vKey.type} kotası doldu, yedeğe geçiliyor...`);
+        continue;
+      }
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.error?.message || `Görsel analizi hatası (${res.status})`);
+      }
+
+      const data = await res.json();
+      let content = data.choices?.[0]?.message?.content || "";
+      
+      // Temizle (varsa markdown bloklarını sök)
+      content = content.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const firstBracket = content.indexOf('[');
+      const lastBracket = content.lastIndexOf(']');
+      if (firstBracket !== -1 && lastBracket !== -1) {
+        content = content.substring(firstBracket, lastBracket + 1);
+      }
+
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch (e) {
+      lastErr = e;
+      console.error('Vision deneme hatası:', e);
+    }
+  }
+
+  throw new Error(lastErr ? lastErr.message : 'Görsel analizi başarısız oldu.');
+}
+
+// Şıkları State ve Canvas'a Uygula
+function applyMatchedChoicesToState(matchedChoices) {
+  const nw = State.image.naturalWidth;
+  const nh = State.image.naturalHeight;
+
+  // Mevcut otomatik şıkları temizle
+  State.annotations = State.annotations.filter(a => !a.isChoice);
+
+  const newAnnotations = matchedChoices.map((item, idx) => {
+    const letter = (item.letter || String.fromCharCode(65 + idx)).toUpperCase();
+    const isCorrect = item.type === 'correct';
+    const ts = Math.max(0, parseFloat(item.timestamp) || 0);
+
+    const boxX = Math.round(nw * (Math.max(1, Math.min(95, item.x_percent || 10)) / 100));
+    const boxY = Math.round(nh * (Math.max(1, Math.min(95, item.y_percent || (45 + idx * 8))) / 100));
+    const boxW = Math.round(nw * (Math.max(10, Math.min(90, item.width_percent || 40)) / 100));
+    const boxH = Math.round(nh * (Math.max(3, Math.min(25, item.height_percent || 6)) / 100));
+
+    return {
+      id: `ann_choice_${letter}_${Date.now()}_${idx}`,
+      isChoice: true,
+      choiceLetter: letter,
+      label: `${letter} Şıkkı (${isCorrect ? '✓ Doğru' : '✕ Yanlış'})`,
+      isPending: ts === 0, // Eğer ses kaydında bahsedilmediyse bekleyen modda kalır
+      type: isCorrect ? 'correct' : 'wrong',
+      shape: 'rect',
+      box: {
+        x: boxX,
+        y: boxY,
+        width: boxW,
+        height: boxH,
+      },
+      timestamp: ts,
+      color: isCorrect ? '#22c55e' : '#ef4444',
+      opacity: State.highlight.opacity || 0.30,
+      borderWidth: State.highlight.borderWidth || 4,
+      borderRadius: State.highlight.borderRadius || 14,
+      glow: State.highlight.glow !== undefined ? State.highlight.glow : true,
+      animType: State.highlight.animType || 'scale_glow',
+      animDuration: State.highlight.animDuration || 0.7,
+      checkmark: { enabled: isCorrect, position: 'right', style: 'badge' },
+      crossmark: { enabled: !isCorrect, position: 'right', style: 'badge' }
+    };
+  });
+
+  State.annotations.push(...newAnnotations);
+
+  if (newAnnotations.length > 0) {
+    selectAnnotation(newAnnotations[0].id);
+  }
+
+  updateSmartAssistantUI();
+  renderAnnotationsList();
+  renderCanvas();
+  updateStepIndicator();
+  updateRenderButtonState();
+  updateFfmpegCommand();
+}
+
+if (DOM.btnAiAutoMatch) {
+  DOM.btnAiAutoMatch.addEventListener('click', runAIAutoMatch);
+}
+
+// Başlangıçta anahtar durumunu göster
+updateAiKeyStatus();
 
 // ==========================================
 // 5. ANİMASYON VE CANVAS ÇİZİM MOTORU
