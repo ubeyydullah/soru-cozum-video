@@ -144,18 +144,23 @@ const DOM = {
 
   // Toplu Şık Boyutlandırma & Kolon Hizalama
   sliderChoiceBulkWidth: document.getElementById('slider-choice-bulk-width'),
+  inputChoiceBulkWidth: document.getElementById('input-choice-bulk-width'),
   textChoiceBulkWidth: document.getElementById('text-choice-bulk-width'),
   sliderChoiceBulkHeight: document.getElementById('slider-choice-bulk-height'),
+  inputChoiceBulkHeight: document.getElementById('input-choice-bulk-height'),
   textChoiceBulkHeight: document.getElementById('text-choice-bulk-height'),
   sliderChoiceBulkGap: document.getElementById('slider-choice-bulk-gap'),
+  inputChoiceBulkGap: document.getElementById('input-choice-bulk-gap'),
   textChoiceBulkGap: document.getElementById('text-choice-bulk-gap'),
   sliderChoiceBulkVerdict: document.getElementById('slider-choice-bulk-verdict'),
+  inputChoiceBulkVerdict: document.getElementById('input-choice-bulk-verdict'),
   textChoiceBulkVerdict: document.getElementById('text-choice-bulk-verdict'),
   btnAlignChoicesLeft: document.getElementById('btn-align-choices-left'),
   btnEqualizeChoicesWidth: document.getElementById('btn-equalize-choices-width'),
   btnDistributeChoicesGap: document.getElementById('btn-distribute-choices-gap'),
   btnPerfectChoicesColumn: document.getElementById('btn-perfect-choices-column'),
   sliderChoiceBulkX: document.getElementById('slider-choice-bulk-x'),
+  inputChoiceBulkX: document.getElementById('input-choice-bulk-x'),
   textChoiceBulkX: document.getElementById('text-choice-bulk-x'),
 
   // AI Setup Modal
@@ -2130,99 +2135,167 @@ if (DOM.btnClearAllChoices) {
 }
 
 // ------------------------------------------
-// TOPLU ŞIK BOYUTLANDIRMA & HİZALAMA (Genişlik, Yükseklik, Aralık)
+// TOPLU ŞIK BOYUTLANDIRMA & HİZALAMA (Genişlik, Yükseklik, Aralık, Karar Anı, Kolon X)
+// Hem Slider Hem Doğrudan Sayısal Giriş Desteği
 // ------------------------------------------
+
+function updateBulkChoiceWidth(w) {
+  w = Math.max(30, parseInt(w, 10) || 450);
+  State.choiceLayout.width = w;
+  if (DOM.sliderChoiceBulkWidth) DOM.sliderChoiceBulkWidth.value = w;
+  if (DOM.inputChoiceBulkWidth) DOM.inputChoiceBulkWidth.value = w;
+  if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = w + 'px';
+  localStorage.setItem('soru_choice_width', w);
+
+  // Mevcut tüm şıkların genişliğini topluca güncelle
+  const choices = State.annotations.filter(a => a.isChoice);
+  choices.forEach(ann => {
+    ann.box.width = w;
+  });
+
+  if (State.box.active && State.activeAnnotationId) {
+    const activeAnn = getActiveAnnotation();
+    if (activeAnn && activeAnn.isChoice) {
+      State.box.width = w;
+    }
+  }
+
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function updateBulkChoiceHeight(h) {
+  h = Math.max(15, parseInt(h, 10) || 55);
+  State.choiceLayout.height = h;
+  if (DOM.sliderChoiceBulkHeight) DOM.sliderChoiceBulkHeight.value = h;
+  if (DOM.inputChoiceBulkHeight) DOM.inputChoiceBulkHeight.value = h;
+  if (DOM.textChoiceBulkHeight) DOM.textChoiceBulkHeight.textContent = h + 'px';
+  localStorage.setItem('soru_choice_height', h);
+
+  // Mevcut tüm şıkların yüksekliğini topluca güncelle
+  const choices = State.annotations.filter(a => a.isChoice);
+  choices.forEach(ann => {
+    ann.box.height = h;
+  });
+
+  if (State.box.active && State.activeAnnotationId) {
+    const activeAnn = getActiveAnnotation();
+    if (activeAnn && activeAnn.isChoice) {
+      State.box.height = h;
+    }
+  }
+
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function updateBulkChoiceGap(gap) {
+  gap = Math.max(0, parseInt(gap, 10) || 0);
+  State.choiceLayout.gap = gap;
+  if (DOM.sliderChoiceBulkGap) DOM.sliderChoiceBulkGap.value = gap;
+  if (DOM.inputChoiceBulkGap) DOM.inputChoiceBulkGap.value = gap;
+  if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = gap + 'px';
+  localStorage.setItem('soru_choice_gap', gap);
+
+  // Mevcut tüm şıkların dikey aralığını topluca yeniden hesapla
+  const choices = State.annotations.filter(a => a.isChoice);
+  if (choices.length > 1) {
+    for (let i = 1; i < choices.length; i++) {
+      choices[i].box.y = choices[i - 1].box.y + choices[i - 1].box.height + gap;
+    }
+
+    if (State.box.active && State.activeAnnotationId) {
+      const activeAnn = getActiveAnnotation();
+      if (activeAnn && activeAnn.isChoice) {
+        State.box.y = activeAnn.box.y;
+      }
+    }
+
+    renderCanvas();
+    updateFfmpegCommand();
+  }
+}
+
+function updateBulkChoiceVerdict(val) {
+  val = Math.max(10, Math.min(100, parseInt(val, 10) || 65));
+  State.choiceLayout.verdictRatio = val / 100;
+  if (DOM.sliderChoiceBulkVerdict) DOM.sliderChoiceBulkVerdict.value = val;
+  if (DOM.inputChoiceBulkVerdict) DOM.inputChoiceBulkVerdict.value = val;
+  if (DOM.textChoiceBulkVerdict) DOM.textChoiceBulkVerdict.textContent = '%' + val;
+  localStorage.setItem('soru_choice_verdict_ratio', (val / 100).toString());
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function updateBulkColumnX(newX) {
+  newX = Math.max(0, parseInt(newX, 10) || 0);
+  const choices = State.annotations.filter(a => a.isChoice && a.box);
+  if (choices.length > 0) {
+    const currentMinX = Math.min(...choices.map(c => c.box.x));
+    const delta = newX - currentMinX;
+    choices.forEach(c => {
+      c.box.x = Math.max(0, c.box.x + delta);
+    });
+    if (State.box.active && State.activeAnnotationId) {
+      const active = getActiveAnnotation();
+      if (active && active.isChoice) State.box.x = active.box.x;
+    }
+  }
+  if (DOM.sliderChoiceBulkX) DOM.sliderChoiceBulkX.value = newX;
+  if (DOM.inputChoiceBulkX) DOM.inputChoiceBulkX.value = newX;
+  if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = newX + 'px';
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+// Genişlik Dinleyicileri
 if (DOM.sliderChoiceBulkWidth) {
-  DOM.sliderChoiceBulkWidth.addEventListener('input', (e) => {
-    const w = parseInt(e.target.value, 10);
-    State.choiceLayout.width = w;
-    if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = w + 'px';
-    localStorage.setItem('soru_choice_width', w);
-
-    // Mevcut tüm şıkların genişliğini topluca güncelle
-    const choices = State.annotations.filter(a => a.isChoice);
-    choices.forEach(ann => {
-      ann.box.width = w;
-    });
-
-    if (State.box.active && State.activeAnnotationId) {
-      const activeAnn = getActiveAnnotation();
-      if (activeAnn && activeAnn.isChoice) {
-        State.box.width = w;
-      }
-    }
-
-    renderCanvas();
-    updateFfmpegCommand();
-  });
+  DOM.sliderChoiceBulkWidth.addEventListener('input', (e) => updateBulkChoiceWidth(e.target.value));
+}
+if (DOM.inputChoiceBulkWidth) {
+  DOM.inputChoiceBulkWidth.addEventListener('input', (e) => updateBulkChoiceWidth(e.target.value));
+  DOM.inputChoiceBulkWidth.addEventListener('change', (e) => updateBulkChoiceWidth(e.target.value));
 }
 
+// Yükseklik Dinleyicileri
 if (DOM.sliderChoiceBulkHeight) {
-  DOM.sliderChoiceBulkHeight.addEventListener('input', (e) => {
-    const h = parseInt(e.target.value, 10);
-    State.choiceLayout.height = h;
-    if (DOM.textChoiceBulkHeight) DOM.textChoiceBulkHeight.textContent = h + 'px';
-    localStorage.setItem('soru_choice_height', h);
-
-    // Mevcut tüm şıkların yüksekliğini topluca güncelle
-    const choices = State.annotations.filter(a => a.isChoice);
-    choices.forEach(ann => {
-      ann.box.height = h;
-    });
-
-    if (State.box.active && State.activeAnnotationId) {
-      const activeAnn = getActiveAnnotation();
-      if (activeAnn && activeAnn.isChoice) {
-        State.box.height = h;
-      }
-    }
-
-    renderCanvas();
-    updateFfmpegCommand();
-  });
+  DOM.sliderChoiceBulkHeight.addEventListener('input', (e) => updateBulkChoiceHeight(e.target.value));
+}
+if (DOM.inputChoiceBulkHeight) {
+  DOM.inputChoiceBulkHeight.addEventListener('input', (e) => updateBulkChoiceHeight(e.target.value));
+  DOM.inputChoiceBulkHeight.addEventListener('change', (e) => updateBulkChoiceHeight(e.target.value));
 }
 
+// Satır Aralığı Dinleyicileri
 if (DOM.sliderChoiceBulkGap) {
-  DOM.sliderChoiceBulkGap.addEventListener('input', (e) => {
-    const gap = parseInt(e.target.value, 10);
-    State.choiceLayout.gap = gap;
-    if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = gap + 'px';
-    localStorage.setItem('soru_choice_gap', gap);
-
-    // Mevcut tüm şıkların dikey aralığını topluca yeniden hesapla
-    const choices = State.annotations.filter(a => a.isChoice);
-    if (choices.length > 1) {
-      for (let i = 1; i < choices.length; i++) {
-        choices[i].box.y = choices[i - 1].box.y + choices[i - 1].box.height + gap;
-      }
-
-      if (State.box.active && State.activeAnnotationId) {
-        const activeAnn = getActiveAnnotation();
-        if (activeAnn && activeAnn.isChoice) {
-          State.box.y = activeAnn.box.y;
-        }
-      }
-
-      renderCanvas();
-      updateFfmpegCommand();
-    }
-  });
+  DOM.sliderChoiceBulkGap.addEventListener('input', (e) => updateBulkChoiceGap(e.target.value));
+}
+if (DOM.inputChoiceBulkGap) {
+  DOM.inputChoiceBulkGap.addEventListener('input', (e) => updateBulkChoiceGap(e.target.value));
+  DOM.inputChoiceBulkGap.addEventListener('change', (e) => updateBulkChoiceGap(e.target.value));
 }
 
+// Karar Anı Dinleyicileri
 if (DOM.sliderChoiceBulkVerdict) {
-  // İlk yüklemede kaydedilmiş oranı yansıt
   const savedRatio = Math.round((State.choiceLayout.verdictRatio || 0.65) * 100);
   DOM.sliderChoiceBulkVerdict.value = savedRatio;
+  if (DOM.inputChoiceBulkVerdict) DOM.inputChoiceBulkVerdict.value = savedRatio;
   if (DOM.textChoiceBulkVerdict) DOM.textChoiceBulkVerdict.textContent = '%' + savedRatio;
 
-  DOM.sliderChoiceBulkVerdict.addEventListener('input', (e) => {
-    const val = parseInt(e.target.value, 10);
-    State.choiceLayout.verdictRatio = val / 100;
-    if (DOM.textChoiceBulkVerdict) DOM.textChoiceBulkVerdict.textContent = '%' + val;
-    localStorage.setItem('soru_choice_verdict_ratio', (val / 100).toString());
-    renderCanvas();
-    updateFfmpegCommand();
-  });
+  DOM.sliderChoiceBulkVerdict.addEventListener('input', (e) => updateBulkChoiceVerdict(e.target.value));
+}
+if (DOM.inputChoiceBulkVerdict) {
+  DOM.inputChoiceBulkVerdict.addEventListener('input', (e) => updateBulkChoiceVerdict(e.target.value));
+  DOM.inputChoiceBulkVerdict.addEventListener('change', (e) => updateBulkChoiceVerdict(e.target.value));
+}
+
+// Kolon X Dinleyicileri
+if (DOM.sliderChoiceBulkX) {
+  DOM.sliderChoiceBulkX.addEventListener('input', (e) => updateBulkColumnX(e.target.value));
+}
+if (DOM.inputChoiceBulkX) {
+  DOM.inputChoiceBulkX.addEventListener('input', (e) => updateBulkColumnX(e.target.value));
+  DOM.inputChoiceBulkX.addEventListener('change', (e) => updateBulkColumnX(e.target.value));
 }
 
 // ------------------------------------------
@@ -2238,6 +2311,7 @@ function alignChoicesLeft() {
     if (active && active.isChoice) State.box.x = minX;
   }
   if (DOM.sliderChoiceBulkX) DOM.sliderChoiceBulkX.value = minX;
+  if (DOM.inputChoiceBulkX) DOM.inputChoiceBulkX.value = minX;
   if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = minX + 'px';
   renderCanvas();
   updateFfmpegCommand();
@@ -2252,6 +2326,9 @@ function equalizeChoicesWidth() {
     const active = getActiveAnnotation();
     if (active && active.isChoice) State.box.width = targetW;
   }
+  if (DOM.sliderChoiceBulkWidth) DOM.sliderChoiceBulkWidth.value = targetW;
+  if (DOM.inputChoiceBulkWidth) DOM.inputChoiceBulkWidth.value = targetW;
+  if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = targetW + 'px';
   renderCanvas();
   updateFfmpegCommand();
 }
@@ -2268,6 +2345,9 @@ function distributeChoicesGap() {
     const active = getActiveAnnotation();
     if (active && active.isChoice) State.box.y = active.box.y;
   }
+  if (DOM.sliderChoiceBulkGap) DOM.sliderChoiceBulkGap.value = gap;
+  if (DOM.inputChoiceBulkGap) DOM.inputChoiceBulkGap.value = gap;
+  if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = gap + 'px';
   renderCanvas();
   updateFfmpegCommand();
 }
@@ -2282,26 +2362,6 @@ if (DOM.btnAlignChoicesLeft) DOM.btnAlignChoicesLeft.addEventListener('click', a
 if (DOM.btnEqualizeChoicesWidth) DOM.btnEqualizeChoicesWidth.addEventListener('click', equalizeChoicesWidth);
 if (DOM.btnDistributeChoicesGap) DOM.btnDistributeChoicesGap.addEventListener('click', distributeChoicesGap);
 if (DOM.btnPerfectChoicesColumn) DOM.btnPerfectChoicesColumn.addEventListener('click', makePerfectChoicesColumn);
-
-if (DOM.sliderChoiceBulkX) {
-  DOM.sliderChoiceBulkX.addEventListener('input', (e) => {
-    const newX = parseInt(e.target.value, 10);
-    const choices = State.annotations.filter(a => a.isChoice && a.box);
-    if (choices.length === 0) return;
-    const currentMinX = Math.min(...choices.map(c => c.box.x));
-    const delta = newX - currentMinX;
-    choices.forEach(c => {
-      c.box.x = Math.max(0, c.box.x + delta);
-    });
-    if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = newX + 'px';
-    if (State.box.active && State.activeAnnotationId) {
-      const active = getActiveAnnotation();
-      if (active && active.isChoice) State.box.x = active.box.x;
-    }
-    renderCanvas();
-    updateFfmpegCommand();
-  });
-}
 
 // ------------------------------------------
 // YAPAY ZEKA ANAHTARLARI & KURULUM SİHİRBAZI
@@ -3048,6 +3108,10 @@ function applyMatchedChoicesToState(matchedChoices) {
   });
 
   State.annotations.push(...newAnnotations);
+
+  if (DOM.sliderChoiceBulkX) DOM.sliderChoiceBulkX.value = commonAlignedX;
+  if (DOM.inputChoiceBulkX) DOM.inputChoiceBulkX.value = commonAlignedX;
+  if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = commonAlignedX + 'px';
 
   if (newAnnotations.length > 0) {
     selectAnnotation(newAnnotations[0].id);
@@ -4256,14 +4320,17 @@ function loadSettings() {
     // Toplu Şık Boyutları ve Hizalama
     if (DOM.sliderChoiceBulkWidth) {
       DOM.sliderChoiceBulkWidth.value = State.choiceLayout.width;
+      if (DOM.inputChoiceBulkWidth) DOM.inputChoiceBulkWidth.value = State.choiceLayout.width;
       if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = State.choiceLayout.width + 'px';
     }
     if (DOM.sliderChoiceBulkHeight) {
       DOM.sliderChoiceBulkHeight.value = State.choiceLayout.height;
+      if (DOM.inputChoiceBulkHeight) DOM.inputChoiceBulkHeight.value = State.choiceLayout.height;
       if (DOM.textChoiceBulkHeight) DOM.textChoiceBulkHeight.textContent = State.choiceLayout.height + 'px';
     }
     if (DOM.sliderChoiceBulkGap) {
       DOM.sliderChoiceBulkGap.value = State.choiceLayout.gap;
+      if (DOM.inputChoiceBulkGap) DOM.inputChoiceBulkGap.value = State.choiceLayout.gap;
       if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = State.choiceLayout.gap + 'px';
     }
   } catch (e) {

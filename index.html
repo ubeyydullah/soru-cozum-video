@@ -422,42 +422,58 @@
             <span class="text-[10px] text-zinc-400">Şıkları dikey doğrultuda kusursuz hizalayın</span>
           </div>
 
-          <!-- Boyutlandırma Sliderları -->
+          <!-- Boyutlandırma Sliderları & Doğrudan Değer Giriş Kutuları -->
           <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
             <!-- Genişlik (Width) -->
-            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
-              <div class="flex items-center justify-between text-[11px] mb-1">
+            <div class="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/70 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between text-[11px]">
                 <span class="text-zinc-400 font-medium">↔ Genişlik</span>
-                <span id="text-choice-bulk-width" class="font-mono text-emerald-400 font-bold">450px</span>
+                <div class="flex items-center gap-0.5 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800 focus-within:border-emerald-500 transition-colors">
+                  <input type="number" id="input-choice-bulk-width" min="40" max="2500" step="5" value="450" class="w-12 bg-transparent text-right font-mono text-emerald-400 font-bold focus:outline-none text-[11px]" title="Genişlik değerini elle girin">
+                  <span class="text-zinc-500 text-[10px] select-none font-mono">px</span>
+                </div>
               </div>
-              <input type="range" id="slider-choice-bulk-width" min="120" max="1400" step="10" value="450" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+              <input type="range" id="slider-choice-bulk-width" min="50" max="1400" step="5" value="450" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Genişliği kaydırarak ayarlayın">
+              <span id="text-choice-bulk-width" class="hidden">450px</span>
             </div>
 
             <!-- Yükseklik (Height) -->
-            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
-              <div class="flex items-center justify-between text-[11px] mb-1">
+            <div class="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/70 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between text-[11px]">
                 <span class="text-zinc-400 font-medium">↕ Yükseklik</span>
-                <span id="text-choice-bulk-height" class="font-mono text-emerald-400 font-bold">55px</span>
+                <div class="flex items-center gap-0.5 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800 focus-within:border-emerald-500 transition-colors">
+                  <input type="number" id="input-choice-bulk-height" min="15" max="500" step="1" value="55" class="w-12 bg-transparent text-right font-mono text-emerald-400 font-bold focus:outline-none text-[11px]" title="Yükseklik değerini elle girin">
+                  <span class="text-zinc-500 text-[10px] select-none font-mono">px</span>
+                </div>
               </div>
-              <input type="range" id="slider-choice-bulk-height" min="20" max="140" step="2" value="55" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+              <input type="range" id="slider-choice-bulk-height" min="20" max="180" step="1" value="55" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Yüksekliği kaydırarak ayarlayın">
+              <span id="text-choice-bulk-height" class="hidden">55px</span>
             </div>
 
             <!-- Satır Aralığı (Spacing / Gap) -->
-            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
-              <div class="flex items-center justify-between text-[11px] mb-1">
+            <div class="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/70 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between text-[11px]">
                 <span class="text-zinc-400 font-medium">⇕ Satır Aralığı</span>
-                <span id="text-choice-bulk-gap" class="font-mono text-emerald-400 font-bold">20px</span>
+                <div class="flex items-center gap-0.5 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800 focus-within:border-emerald-500 transition-colors">
+                  <input type="number" id="input-choice-bulk-gap" min="0" max="300" step="1" value="20" class="w-12 bg-transparent text-right font-mono text-emerald-400 font-bold focus:outline-none text-[11px]" title="Şıklar arası dikey boşluğu elle girin">
+                  <span class="text-zinc-500 text-[10px] select-none font-mono">px</span>
+                </div>
               </div>
-              <input type="range" id="slider-choice-bulk-gap" min="4" max="120" step="2" value="20" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+              <input type="range" id="slider-choice-bulk-gap" min="0" max="150" step="1" value="20" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Şıklar arasındaki boşluğu kaydırarak ayarlayın">
+              <span id="text-choice-bulk-gap" class="hidden">20px</span>
             </div>
 
             <!-- Karar Zamanlaması (Verdict Timing) -->
-            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
-              <div class="flex items-center justify-between text-[11px] mb-1">
-                <span class="text-zinc-400 font-medium">⏱ Karar Anı</span>
-                <span id="text-choice-bulk-verdict" class="font-mono text-emerald-400 font-bold">%65</span>
+            <div class="bg-zinc-900/60 p-2 rounded-xl border border-zinc-800/70 flex flex-col gap-1.5">
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="text-zinc-400 font-medium" title="Şıkkın seslendirme süresinin yüzde kaçında karar (✕ veya ✓) verilsin">⏱ Karar Anı</span>
+                <div class="flex items-center gap-0.5 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800 focus-within:border-emerald-500 transition-colors">
+                  <span class="text-zinc-500 text-[10px] select-none font-mono">%</span>
+                  <input type="number" id="input-choice-bulk-verdict" min="10" max="100" step="1" value="65" class="w-9 bg-transparent text-right font-mono text-emerald-400 font-bold focus:outline-none text-[11px]" title="Karar anı yüzdesini elle girin">
+                </div>
               </div>
-              <input type="range" id="slider-choice-bulk-verdict" min="30" max="95" step="5" value="65" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Şıkkın seslendirme süresinin yüzde kaçında karar (✕ veya ✓) verilsin">
+              <input type="range" id="slider-choice-bulk-verdict" min="20" max="100" step="1" value="65" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Şıkkın seslendirme süresinin yüzde kaçında karar (✕ veya ✓) verilsin">
+              <span id="text-choice-bulk-verdict" class="hidden">%65</span>
             </div>
           </div>
 
@@ -486,34 +502,17 @@
               </button>
             </div>
 
-            <!-- Tüm Kolon X Konumu Slider -->
-            <div class="flex items-center gap-2 text-xs">
-              <span class="text-zinc-400 text-[11px] font-medium" title="Tüm şıkları bozmadan sağa veya sola kaydırın">↔ Kolon X:</span>
-              <input type="range" id="slider-choice-bulk-x" min="10" max="1200" step="5" value="50" class="w-24 h-1.5 accent-emerald-500 cursor-pointer" title="Tüm şık kolonunu topluca sağa/sola kaydırın">
-              <span id="text-choice-bulk-x" class="font-mono text-[11px] text-emerald-400 font-bold w-12 text-right">50px</span>
+            <!-- Tüm Kolon X Konumu: Hem Slider Hem Doğrudan Sayı Girişi -->
+            <div class="flex items-center gap-2 text-xs bg-zinc-900/50 px-2.5 py-1 rounded-lg border border-zinc-800/60">
+              <span class="text-zinc-400 text-[11px] font-medium whitespace-nowrap" title="Tüm şıkları dikey kolon hizasını bozmadan sağa veya sola kaydırın">↔ Kolon X:</span>
+              <input type="range" id="slider-choice-bulk-x" min="0" max="1800" step="1" value="50" class="w-24 h-1.5 accent-emerald-500 cursor-pointer" title="Tüm şık kolonunu topluca sağa/sola kaydırın">
+              <div class="flex items-center gap-0.5 bg-zinc-950 px-1.5 py-0.5 rounded border border-zinc-800 focus-within:border-emerald-500 transition-colors">
+                <input type="number" id="input-choice-bulk-x" min="0" max="3000" step="1" value="50" class="w-14 bg-transparent text-right font-mono text-emerald-400 font-bold focus:outline-none text-[11px]" title="Kolon X piksel konumunu elle girin">
+                <span class="text-zinc-500 text-[10px] select-none font-mono">px</span>
+              </div>
+              <span id="text-choice-bulk-x" class="hidden">50px</span>
             </div>
           </div>
-        </div>
-      </div>
-
-      <!-- Eklenen Vurgular Listesi (Çoklu Şık & Zaman Çizelgesi) -->
-      <div id="annotations-bar" class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl px-4 py-2.5 flex items-center justify-between gap-3 text-xs shadow-md">
-        <div class="flex items-center gap-2 overflow-x-auto py-0.5">
-          <span class="text-zinc-400 font-semibold flex items-center gap-1.5 flex-shrink-0">
-            <i data-lucide="layers" class="w-4 h-4 text-emerald-400"></i>
-            <span>Vurgu Katmanları:</span>
-          </span>
-          <div id="annotations-list" class="flex items-center gap-2">
-            <!-- Dinamik Şık Rozetleri -->
-            <span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın.</span>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2 flex-shrink-0">
-          <button id="btn-add-annotation" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5 transition-all shadow-sm">
-            <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-            <span>+ Yeni Vurgu Ekle</span>
-          </button>
         </div>
       </div>
 
