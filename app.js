@@ -926,7 +926,7 @@ window.addEventListener('mouseup', () => {
         },
         crossmark: {
           enabled: !isCorrect,
-          position: 'right',
+          position: 'left',
           style: 'badge',
         }
       };
@@ -994,8 +994,23 @@ function applyChoiceTemplate(numChoices = 5) {
   // Mevcut otomatik şıkları temizle (varsa)
   State.annotations = State.annotations.filter(a => !a.isChoice);
 
+  const visualBoxes = detectVisualChoiceBoxesFromImage(State.image.element, numChoices);
+
   const newChoices = letters.map((letter, idx) => {
+    const vb = (visualBoxes && visualBoxes[idx]) ? visualBoxes[idx] : null;
     const curY = Math.round(startY + idx * rowSlot + (rowSlot - boxH) / 2);
+    const box = vb ? {
+      x: Math.round(nw * (vb.x_percent / 100)),
+      y: Math.round(nh * (vb.y_percent / 100)),
+      width: Math.round(nw * (vb.width_percent / 100)),
+      height: Math.round(nh * (vb.height_percent / 100))
+    } : {
+      x: boxX,
+      y: curY,
+      width: boxW,
+      height: boxH
+    };
+
     return {
       id: `ann_choice_${letter}_${Date.now()}_${idx}`,
       isChoice: true,
@@ -1004,12 +1019,7 @@ function applyChoiceTemplate(numChoices = 5) {
       isPending: true, // Sırada bekliyor, henüz zaman damgası almadı
       type: 'neutral',
       shape: 'rect',
-      box: {
-        x: boxX,
-        y: curY,
-        width: boxW,
-        height: boxH,
-      },
+      box: box,
       timestamp: 0,
       color: '#38bdf8',
       opacity: State.highlight.opacity || 0.30,
@@ -1019,7 +1029,7 @@ function applyChoiceTemplate(numChoices = 5) {
       animType: State.highlight.animType || 'scale_glow',
       animDuration: State.highlight.animDuration || 0.7,
       checkmark: { enabled: false, position: 'right', style: 'badge' },
-      crossmark: { enabled: false, position: 'right', style: 'badge' }
+      crossmark: { enabled: false, position: 'left', style: 'badge' }
     };
   });
 
@@ -1224,7 +1234,7 @@ function detectQuestionChoices(numChoices = 5) {
         animType: State.highlight.animType || 'scale_glow',
         animDuration: State.highlight.animDuration || 0.7,
         checkmark: { enabled: false, position: 'right', style: 'badge' },
-        crossmark: { enabled: false, position: 'right', style: 'badge' }
+        crossmark: { enabled: false, position: 'left', style: 'badge' }
       };
     });
 
@@ -1359,19 +1369,23 @@ function findTextBoundingBoxAt(clickX, clickY) {
  */
 function applyDetectedBoxToChoice(detectedBox) {
   const letters = ['A', 'B', 'C', 'D', 'E'];
-  const pending = State.annotations.filter(a => a.isChoice && a.isPending);
+  const allChoices = State.annotations.filter(a => a.isChoice);
+  const activeAnn = getActiveAnnotation();
 
-  if (pending.length > 0) {
-    const targetAnn = (State.activeAnnotationId && pending.some(p => p.id === State.activeAnnotationId))
-      ? pending.find(p => p.id === State.activeAnnotationId)
-      : pending[0];
-
+  // 1. Eğer halihazırda bir şık seçiliyse, doğrudan onun kutusunu güncelle ve sonrakine geç!
+  if (activeAnn && activeAnn.isChoice) {
+    activeAnn.box = { ...detectedBox };
+    State.box = { ...detectedBox, active: true };
+    selectAnnotation(activeAnn.id);
+    cycleChoice(1); // Sıradaki şıkka geç (A -> B -> C -> D -> E)
+  } else if (allChoices.length > 0) {
+    // Seçili yoksa ilk bekleyen şıkkı, o da yoksa ilk şıkkı güncelle
+    const pending = allChoices.filter(a => a.isPending);
+    const targetAnn = pending.length > 0 ? pending[0] : allChoices[0];
     targetAnn.box = { ...detectedBox };
     State.box = { ...detectedBox, active: true };
     selectAnnotation(targetAnn.id);
-
-    // Bir sonraki bekleyene odaklan
-    advanceToNextPendingChoice();
+    cycleChoice(1);
   } else {
     const existingChoices = State.annotations.filter(a => a.isChoice);
     const nextIdx = existingChoices.length;
@@ -1395,7 +1409,7 @@ function applyDetectedBoxToChoice(detectedBox) {
       animType: State.highlight.animType || 'scale_glow',
       animDuration: State.highlight.animDuration || 0.7,
       checkmark: { enabled: false, position: 'right', style: 'badge' },
-      crossmark: { enabled: false, position: 'right', style: 'badge' }
+      crossmark: { enabled: false, position: 'left', style: 'badge' }
     };
 
     State.annotations.push(newChoice);
@@ -2022,6 +2036,18 @@ SADECE JSON array döndür, markdown yazma:`;
           if (fb !== -1 && lb !== -1) {
             const parsed = JSON.parse(txt.substring(fb, lb + 1));
             if (Array.isArray(parsed) && parsed.length > 0) {
+              // Görseldeki gerçek piksel satırlarını tespit et ve koordinatları üzerine bindir
+              const visualBoxes = detectVisualChoiceBoxesFromImage(State.image.element, parsed.length);
+              if (visualBoxes && visualBoxes.length >= parsed.length) {
+                parsed.forEach((item, idx) => {
+                  if (visualBoxes[idx]) {
+                    item.x_percent = visualBoxes[idx].x_percent;
+                    item.y_percent = visualBoxes[idx].y_percent;
+                    item.width_percent = visualBoxes[idx].width_percent;
+                    item.height_percent = visualBoxes[idx].height_percent;
+                  }
+                });
+              }
               return parsed;
             }
           }
@@ -2042,11 +2068,167 @@ SADECE JSON array döndür, markdown yazma:`;
   throw new Error(lastErr ? lastErr.message : 'Şık analizi gerçekleştirilemedi.');
 }
 
+/**
+ * Görseldeki gerçek şık alanlarını piksel satır projeksiyonu (Row Projection) ile otomatik tespit eder
+ */
+function detectVisualChoiceBoxesFromImage(imgElement, count = 5) {
+  if (!imgElement || !imgElement.naturalWidth || !imgElement.naturalHeight) return null;
+  const nw = imgElement.naturalWidth;
+  const nh = imgElement.naturalHeight;
+
+  const offCanvas = document.createElement('canvas');
+  offCanvas.width = nw;
+  offCanvas.height = nh;
+  const octx = offCanvas.getContext('2d');
+  octx.drawImage(imgElement, 0, 0);
+
+  // Şıklar genellikle soru kökünün altında veya görselin alt yarısında yer alır
+  const startY = Math.round(nh * 0.28);
+  const endY = Math.round(nh * 0.98);
+  const scanH = endY - startY;
+
+  let imgData;
+  try {
+    imgData = octx.getImageData(0, startY, nw, scanH);
+  } catch (e) {
+    return null;
+  }
+  const data = imgData.data;
+
+  // 1. Zemin Parlaklığını Belirle (Açık zemin mi Koyu tema mı?)
+  let darkPixelCount = 0;
+  for (let i = 0; i < data.length; i += 8) {
+    const lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    if (lum < 160) darkPixelCount++;
+  }
+  const isDarkBg = (darkPixelCount > (scanH * nw * 0.5) * 0.65);
+
+  // 2. Dikey Satır Bazlı Metin Pikseli Sayımı (Row Profile)
+  const rowCounts = new Int32Array(scanH);
+  for (let y = 0; y < scanH; y++) {
+    let c = 0;
+    const rowOffset = y * nw * 4;
+    for (let x = 0; x < nw; x += 2) {
+      const idx = rowOffset + x * 4;
+      const lum = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+      const isText = isDarkBg ? (lum > 140) : (lum < 165);
+      if (isText) c++;
+    }
+    rowCounts[y] = c;
+  }
+
+  // 3. Metin Bantlarını Bul
+  const minTextPix = Math.max(10, Math.round(nw * 0.012));
+  const rawBands = [];
+  let inBand = false;
+  let bStart = 0;
+
+  for (let y = 0; y < scanH; y++) {
+    if (rowCounts[y] >= minTextPix) {
+      if (!inBand) { inBand = true; bStart = y; }
+    } else {
+      if (inBand) {
+        inBand = false;
+        const bH = y - bStart;
+        if (bH >= 6 && bH <= nh * 0.22) {
+          rawBands.push({ startY: bStart + startY, endY: y + startY, height: bH });
+        }
+      }
+    }
+  }
+  if (inBand) {
+    const bH = scanH - bStart;
+    if (bH >= 6 && bH <= nh * 0.22) {
+      rawBands.push({ startY: bStart + startY, endY: scanH + startY, height: bH });
+    }
+  }
+
+  if (rawBands.length === 0) return null;
+
+  // 4. Birbirine çok yakın (boşluk <= 10px) satırları birleştir
+  const mergedBands = [];
+  for (const b of rawBands) {
+    if (mergedBands.length > 0) {
+      const prev = mergedBands[mergedBands.length - 1];
+      if (b.startY - prev.endY <= 10) {
+        prev.endY = b.endY;
+        prev.height = prev.endY - prev.startY;
+        continue;
+      }
+    }
+    mergedBands.push({ ...b });
+  }
+
+  // 5. Şık Bantlarını Filtrele (Genellikle en alttaki son N satır)
+  let choiceBands = [];
+  if (mergedBands.length >= count) {
+    choiceBands = mergedBands.slice(mergedBands.length - count);
+  } else if (mergedBands.length >= 4) {
+    choiceBands = mergedBands.slice(mergedBands.length - 4);
+  } else {
+    choiceBands = mergedBands;
+  }
+
+  // 6. Her bant için sol/sağ sınırları belirle ve kutu oluştur
+  const boxes = [];
+  const padX = Math.round(nw * 0.012);
+  const padY = Math.round(nh * 0.008);
+
+  for (let i = 0; i < choiceBands.length; i++) {
+    const band = choiceBands[i];
+    const bH = band.endY - band.startY;
+    let bData;
+    try {
+      bData = octx.getImageData(0, band.startY, nw, bH).data;
+    } catch (e) {
+      continue;
+    }
+
+    let minX = nw;
+    let maxX = 0;
+    let found = false;
+
+    for (let by = 0; by < bH; by++) {
+      const rowOffset = by * nw * 4;
+      for (let bx = 0; bx < nw; bx++) {
+        const idx = rowOffset + bx * 4;
+        const lum = 0.299 * bData[idx] + 0.587 * bData[idx + 1] + 0.114 * bData[idx + 2];
+        const isText = isDarkBg ? (lum > 140) : (lum < 165);
+        if (isText) {
+          if (bx < minX) minX = bx;
+          if (bx > maxX) maxX = bx;
+          found = true;
+        }
+      }
+    }
+
+    if (!found || maxX <= minX) {
+      minX = Math.round(nw * 0.08);
+      maxX = Math.round(nw * 0.55);
+    }
+
+    const boxX = Math.max(0, minX - padX);
+    const boxY = Math.max(0, band.startY - padY);
+    const boxW = Math.min(nw - boxX, Math.max(Math.round(nw * 0.32), (maxX - minX) + padX * 2 + 25));
+    const boxH = Math.min(nh - boxY, (band.endY - band.startY) + padY * 2);
+
+    boxes.push({
+      x_percent: (boxX / nw) * 100,
+      y_percent: (boxY / nh) * 100,
+      width_percent: (boxW / nw) * 100,
+      height_percent: (boxH / nh) * 100
+    });
+  }
+
+  return boxes.length > 0 ? boxes : null;
+}
+
 // Tamamen Çevrimdışı / Yerel Transkript Şık Çıkarıcı (Sıfır Hata Garantisi)
 function extractChoicesLocallyFromTranscript(transcript) {
   const letters = ['A', 'B', 'C', 'D', 'E'];
   const lines = transcript.split('\n');
   const results = [];
+  const visualBoxes = detectVisualChoiceBoxesFromImage(State.image.element, letters.length);
 
   letters.forEach((letter, idx) => {
     let foundTs = 0;
@@ -2069,14 +2251,16 @@ function extractChoicesLocallyFromTranscript(transcript) {
       }
     }
 
+    const vb = (visualBoxes && visualBoxes[idx]) ? visualBoxes[idx] : null;
+
     results.push({
       letter: letter,
       type: foundType,
       timestamp: foundTs,
-      x_percent: 12,
-      y_percent: 46 + idx * 8,
-      width_percent: 45,
-      height_percent: 6
+      x_percent: vb ? vb.x_percent : 12,
+      y_percent: vb ? vb.y_percent : (46 + idx * 8),
+      width_percent: vb ? vb.width_percent : 45,
+      height_percent: vb ? vb.height_percent : 6
     });
   });
 
@@ -2124,7 +2308,7 @@ function applyMatchedChoicesToState(matchedChoices) {
       animType: State.highlight.animType || 'scale_glow',
       animDuration: State.highlight.animDuration || 0.7,
       checkmark: { enabled: isCorrect, position: 'right', style: 'badge' },
-      crossmark: { enabled: !isCorrect, position: 'right', style: 'badge' }
+      crossmark: { enabled: !isCorrect, position: 'left', style: 'badge' }
     };
   });
 
@@ -2511,8 +2695,22 @@ function drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
  */
 function drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
   const R = Math.max(14, Math.min(26, bh * 0.42));
-  const cx = bx + bw + R + 14 * scale;
-  const cy = by + bh / 2;
+  const pos = ann.crossmark?.position || 'left';
+  let cx, cy;
+  if (pos === 'left') {
+    cx = bx - R - 12 * scale;
+    cy = by + bh / 2;
+    // Eğer görselin sol kenarından taşarsa kutunun içine/soluna güvenli yerleştir
+    if (cx - R < 4) {
+      cx = bx + R + 6 * scale;
+    }
+  } else if (pos === 'right') {
+    cx = bx + bw + R + 12 * scale;
+    cy = by + bh / 2;
+  } else {
+    cx = bx - R - 12 * scale;
+    cy = by + bh / 2;
+  }
 
   let badgeScale = 1.0;
   let strokeProgress = 1.0;
@@ -3701,7 +3899,7 @@ DOM.btnLoadDemo.addEventListener('click', () => {
           animType: 'scale_glow',
           animDuration: 0.7,
           checkmark: { enabled: false },
-          crossmark: { enabled: true, position: 'right', style: 'badge' }
+          crossmark: { enabled: true, position: 'left', style: 'badge' }
         },
         {
           id: 'demo_ann_3',
