@@ -250,6 +250,55 @@
             </button>
           </div>
         </div>
+
+        <!-- Toplu Şık Boyutlandırma & Hizalama (Genişlik, Yükseklik, Aralık) -->
+        <div class="bg-zinc-950/70 border border-zinc-800/90 rounded-xl p-2.5 flex flex-col gap-2">
+          <div class="flex items-center justify-between text-[11px]">
+            <span class="font-bold text-zinc-300 flex items-center gap-1.5">
+              <i data-lucide="proportions" class="w-3.5 h-3.5 text-violet-400"></i>
+              <span>Şık Boyutları (Toplu Boyutlandırma):</span>
+            </span>
+            <span class="text-[10px] text-zinc-400">Eşleme öncesi veya sonrası tüm şıkları birlikte ölçekleyin</span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <!-- Genişlik (Width) -->
+            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
+              <div class="flex items-center justify-between text-[11px] mb-1">
+                <span class="text-zinc-400 font-medium">↔ Genişlik</span>
+                <span id="text-choice-bulk-width" class="font-mono text-emerald-400 font-bold">450px</span>
+              </div>
+              <input type="range" id="slider-choice-bulk-width" min="120" max="1400" step="10" value="450" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+            </div>
+
+            <!-- Yükseklik (Height) -->
+            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
+              <div class="flex items-center justify-between text-[11px] mb-1">
+                <span class="text-zinc-400 font-medium">↕ Yükseklik</span>
+                <span id="text-choice-bulk-height" class="font-mono text-emerald-400 font-bold">55px</span>
+              </div>
+              <input type="range" id="slider-choice-bulk-height" min="20" max="140" step="2" value="55" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+            </div>
+
+            <!-- Satır Aralığı (Spacing / Gap) -->
+            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
+              <div class="flex items-center justify-between text-[11px] mb-1">
+                <span class="text-zinc-400 font-medium">⇕ Satır Aralığı</span>
+                <span id="text-choice-bulk-gap" class="font-mono text-emerald-400 font-bold">20px</span>
+              </div>
+              <input type="range" id="slider-choice-bulk-gap" min="4" max="120" step="2" value="20" class="w-full h-1.5 accent-emerald-500 cursor-pointer">
+            </div>
+
+            <!-- Karar Zamanlaması (Verdict Timing) -->
+            <div class="bg-zinc-900/60 p-1.5 rounded-lg border border-zinc-800/70">
+              <div class="flex items-center justify-between text-[11px] mb-1">
+                <span class="text-zinc-400 font-medium">⏱ Karar Anı</span>
+                <span id="text-choice-bulk-verdict" class="font-mono text-emerald-400 font-bold">%65</span>
+              </div>
+              <input type="range" id="slider-choice-bulk-verdict" min="30" max="95" step="5" value="65" class="w-full h-1.5 accent-emerald-500 cursor-pointer" title="Şıkkın seslendirme süresinin yüzde kaçında karar (✕ veya ✓) verilsin">
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Eklenen Vurgular Listesi (Çoklu Şık & Zaman Çizelgesi) -->

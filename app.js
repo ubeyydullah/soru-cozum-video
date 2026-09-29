@@ -42,6 +42,14 @@ const State = {
     isProcessing: false,
   },
 
+  // Toplu Şık Boyutları ve Hizalama (Önce ve Sonra Canlı Ayar)
+  choiceLayout: {
+    width: parseInt(localStorage.getItem('soru_choice_width'), 10) || 450,
+    height: parseInt(localStorage.getItem('soru_choice_height'), 10) || 55,
+    gap: parseInt(localStorage.getItem('soru_choice_gap'), 10) || 20,
+    verdictRatio: parseFloat(localStorage.getItem('soru_choice_verdict_ratio')) || 0.65,
+  },
+
   // Aktif Seçili Kutu (Geriye dönük uyumluluk ve tutamaçlar için)
   box: {
     x: 0,
@@ -125,6 +133,16 @@ const DOM = {
   btnNudgePrevSec: document.getElementById('btn-nudge-prev-sec'),
   btnNudgeNextSec: document.getElementById('btn-nudge-next-sec'),
   btnClearAllChoices: document.getElementById('btn-clear-all-choices'),
+
+  // Toplu Şık Boyutlandırma & Hizalama
+  sliderChoiceBulkWidth: document.getElementById('slider-choice-bulk-width'),
+  textChoiceBulkWidth: document.getElementById('text-choice-bulk-width'),
+  sliderChoiceBulkHeight: document.getElementById('slider-choice-bulk-height'),
+  textChoiceBulkHeight: document.getElementById('text-choice-bulk-height'),
+  sliderChoiceBulkGap: document.getElementById('slider-choice-bulk-gap'),
+  textChoiceBulkGap: document.getElementById('text-choice-bulk-gap'),
+  sliderChoiceBulkVerdict: document.getElementById('slider-choice-bulk-verdict'),
+  textChoiceBulkVerdict: document.getElementById('text-choice-bulk-verdict'),
 
   // AI Setup Modal
   btnOpenAiSettings: document.getElementById('btn-open-ai-settings'),
@@ -1611,6 +1629,102 @@ if (DOM.btnClearAllChoices) {
 }
 
 // ------------------------------------------
+// TOPLU ŞIK BOYUTLANDIRMA & HİZALAMA (Genişlik, Yükseklik, Aralık)
+// ------------------------------------------
+if (DOM.sliderChoiceBulkWidth) {
+  DOM.sliderChoiceBulkWidth.addEventListener('input', (e) => {
+    const w = parseInt(e.target.value, 10);
+    State.choiceLayout.width = w;
+    if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = w + 'px';
+    localStorage.setItem('soru_choice_width', w);
+
+    // Mevcut tüm şıkların genişliğini topluca güncelle
+    const choices = State.annotations.filter(a => a.isChoice);
+    choices.forEach(ann => {
+      ann.box.width = w;
+    });
+
+    if (State.box.active && State.activeAnnotationId) {
+      const activeAnn = getActiveAnnotation();
+      if (activeAnn && activeAnn.isChoice) {
+        State.box.width = w;
+      }
+    }
+
+    renderCanvas();
+    updateFfmpegCommand();
+  });
+}
+
+if (DOM.sliderChoiceBulkHeight) {
+  DOM.sliderChoiceBulkHeight.addEventListener('input', (e) => {
+    const h = parseInt(e.target.value, 10);
+    State.choiceLayout.height = h;
+    if (DOM.textChoiceBulkHeight) DOM.textChoiceBulkHeight.textContent = h + 'px';
+    localStorage.setItem('soru_choice_height', h);
+
+    // Mevcut tüm şıkların yüksekliğini topluca güncelle
+    const choices = State.annotations.filter(a => a.isChoice);
+    choices.forEach(ann => {
+      ann.box.height = h;
+    });
+
+    if (State.box.active && State.activeAnnotationId) {
+      const activeAnn = getActiveAnnotation();
+      if (activeAnn && activeAnn.isChoice) {
+        State.box.height = h;
+      }
+    }
+
+    renderCanvas();
+    updateFfmpegCommand();
+  });
+}
+
+if (DOM.sliderChoiceBulkGap) {
+  DOM.sliderChoiceBulkGap.addEventListener('input', (e) => {
+    const gap = parseInt(e.target.value, 10);
+    State.choiceLayout.gap = gap;
+    if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = gap + 'px';
+    localStorage.setItem('soru_choice_gap', gap);
+
+    // Mevcut tüm şıkların dikey aralığını topluca yeniden hesapla
+    const choices = State.annotations.filter(a => a.isChoice);
+    if (choices.length > 1) {
+      for (let i = 1; i < choices.length; i++) {
+        choices[i].box.y = choices[i - 1].box.y + choices[i - 1].box.height + gap;
+      }
+
+      if (State.box.active && State.activeAnnotationId) {
+        const activeAnn = getActiveAnnotation();
+        if (activeAnn && activeAnn.isChoice) {
+          State.box.y = activeAnn.box.y;
+        }
+      }
+
+      renderCanvas();
+      updateFfmpegCommand();
+    }
+  });
+}
+
+if (DOM.sliderChoiceBulkVerdict) {
+  // İlk yüklemede kaydedilmiş oranı yansıt
+  const savedRatio = Math.round((State.choiceLayout.verdictRatio || 0.65) * 100);
+  DOM.sliderChoiceBulkVerdict.value = savedRatio;
+  if (DOM.textChoiceBulkVerdict) DOM.textChoiceBulkVerdict.textContent = '%' + savedRatio;
+
+  DOM.sliderChoiceBulkVerdict.addEventListener('input', (e) => {
+    const val = parseInt(e.target.value, 10);
+    State.choiceLayout.verdictRatio = val / 100;
+    if (DOM.textChoiceBulkVerdict) DOM.textChoiceBulkVerdict.textContent = '%' + val;
+    localStorage.setItem('soru_choice_verdict_ratio', (val / 100).toString());
+    renderCanvas();
+    updateFfmpegCommand();
+  });
+}
+
+// ------------------------------------------
 // YAPAY ZEKA ANAHTARLARI & KURULUM SİHİRBAZI
 // ------------------------------------------
 function updateAiKeyStatus() {
@@ -2275,15 +2389,23 @@ function applyMatchedChoicesToState(matchedChoices) {
   // Mevcut otomatik şıkları temizle
   State.annotations = State.annotations.filter(a => !a.isChoice);
 
+  const customW = State.choiceLayout.width || 450;
+  const customH = State.choiceLayout.height || 55;
+  const customGap = State.choiceLayout.gap !== undefined ? State.choiceLayout.gap : 20;
+
   const newAnnotations = matchedChoices.map((item, idx) => {
     const letter = (item.letter || String.fromCharCode(65 + idx)).toUpperCase();
     const isCorrect = item.type === 'correct';
     const ts = Math.max(0, parseFloat(item.timestamp) || 0);
 
     const boxX = Math.round(nw * (Math.max(1, Math.min(95, item.x_percent || 10)) / 100));
-    const boxY = Math.round(nh * (Math.max(1, Math.min(95, item.y_percent || (45 + idx * 8))) / 100));
-    const boxW = Math.round(nw * (Math.max(10, Math.min(90, item.width_percent || 40)) / 100));
-    const boxH = Math.round(nh * (Math.max(3, Math.min(25, item.height_percent || 6)) / 100));
+    const autoY = Math.round(nh * 0.44 + idx * (customH + customGap));
+    const boxY = (item.y_percent && item.y_percent > 15)
+      ? Math.round(nh * (item.y_percent / 100))
+      : autoY;
+
+    const boxW = Math.min(nw - boxX, customW);
+    const boxH = Math.min(nh - boxY, customH);
 
     return {
       id: `ann_choice_${letter}_${Date.now()}_${idx}`,
@@ -2367,79 +2489,412 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
   const isEditMode = !isPlayingAudio && !isExporting && !isTestingAnim;
   const scale = State.image.naturalWidth ? (canvasW / State.image.naturalWidth) : 1.0;
 
-  // 2. Tüm Vurguları Sırayla Çiz
-  for (const ann of State.annotations) {
-    const isPending = !!ann.isPending;
-    const hasReached = !isPending && (currentTime >= ann.timestamp);
-    let showAnn = false;
-    let animProgress = 1.0;
+  const choiceAnns = State.annotations.filter(a => a.isChoice);
+  const nonChoiceAnns = State.annotations.filter(a => !a.isChoice);
 
-    if (isEditMode) {
-      showAnn = true;
-      animProgress = 1.0;
-    } else if (isTestingAnim) {
-      if (!isPending) {
-        const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
-        animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
-        showAnn = true;
+  // ----------------------------------------------------
+  // DURUM A: DÜZENLEME MODU (isEditMode)
+  // Kullanıcı şıkları rahatça seçer, sürükler ve ayarlar
+  // ----------------------------------------------------
+  if (isEditMode) {
+    // Normal vurguları çiz
+    for (const ann of nonChoiceAnns) {
+      const bx = ann.box.x * scale;
+      const by = ann.box.y * scale;
+      const bw = ann.box.width * scale;
+      const bh = ann.box.height * scale;
+      drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, 1.0, true, ann);
+      if (ann.type === 'correct' && ann.checkmark?.enabled) {
+        drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, 1.0, true, ann);
+      } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
+        drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, 1.0, true, ann);
       }
-    } else if (hasReached) {
-      // Vurgu zamanı geldi ve video sonuna kadar sabit kalır!
-      const elapsed = currentTime - ann.timestamp;
-      animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
-      showAnn = true;
-    }
-
-    if (!showAnn) continue;
-
-    const bx = ann.box.x * scale;
-    const by = ann.box.y * scale;
-    const bw = ann.box.width * scale;
-    const bh = ann.box.height * scale;
-
-    // Eğer düzenleme modunda ve bekleyen şıksa aday şık kutusu çiz
-    if (isEditMode && isPending) {
-      drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann);
       if (ann.id === State.activeAnnotationId) {
         drawEditHandles(targetCtx, bx, by, bw, bh);
       }
-      continue;
     }
 
-    // Dikdörtgen veya Elips Vurgu
-    drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+    // Şıkları düzenleme modunda çiz
+    for (const ann of choiceAnns) {
+      const bx = ann.box.x * scale;
+      const by = ann.box.y * scale;
+      const bw = ann.box.width * scale;
+      const bh = ann.box.height * scale;
 
-    // Onay veya Çarpı İkonu Rozeti
-    if (ann.type === 'correct' && ann.checkmark?.enabled) {
-      drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
-    } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
-      drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+      if (ann.isPending) {
+        drawPendingChoiceBox(targetCtx, bx, by, bw, bh, scale, ann);
+      } else if (ann.type === 'wrong') {
+        // Yanlış şık: Çerçeve çizgisi hafif kesikli rehber olarak gösterilir, solunda kırmızı ✕ yer alır
+        drawChoiceEditBox(targetCtx, bx, by, bw, bh, scale, ann, 'wrong');
+        drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, 1.0);
+        drawChoiceTag(targetCtx, bx, by, scale, ann);
+      } else {
+        // Doğru şık: Yeşil kutu ve sağında [✓] Doğru cevap rozeti
+        drawCorrectChoiceBox(targetCtx, bx, by, bw, bh, scale, 1.0, 1.0);
+        drawCorrectChoicePillBadge(targetCtx, bx, by, bw, bh, scale, 1.0);
+        drawChoiceTag(targetCtx, bx, by, scale, ann);
+      }
+
+      if (ann.id === State.activeAnnotationId) {
+        drawEditHandles(targetCtx, bx, by, bw, bh);
+      }
     }
 
-    // Düzenleme modunda şık harfi rozetini sol üstte göster
-    if (isEditMode && ann.choiceLetter) {
-      drawChoiceTag(targetCtx, bx, by, scale, ann);
-    }
-
-    // Düzenleme modunda seçili ise tutamaçları çiz
-    if (isEditMode && ann.id === State.activeAnnotationId) {
+    // Henüz kaydedilmemiş bir çizim varsa (çizim anında)
+    if (!State.activeAnnotationId && State.box.active && State.box.width > 5) {
+      const bx = State.box.x * scale;
+      const by = State.box.y * scale;
+      const bw = State.box.width * scale;
+      const bh = State.box.height * scale;
       drawEditHandles(targetCtx, bx, by, bw, bh);
     }
   }
+  // ----------------------------------------------------
+  // DURUM B: OYNATMA, VİDEO RENDER VEYA ANİMASYON TESTİ
+  // Referans 1, Referans 2 ve Referans 3 Sinematik Akışı
+  // ----------------------------------------------------
+  else {
+    // 1. Normal (şık olmayan) vurguları çiz
+    for (const ann of nonChoiceAnns) {
+      let animProgress = 1.0;
+      let showAnn = false;
+      if (isTestingAnim) {
+        const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
+        animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
+        showAnn = true;
+      } else if (currentTime >= ann.timestamp) {
+        const elapsed = currentTime - ann.timestamp;
+        animProgress = Math.min(1.0, elapsed / (ann.animDuration || 0.8));
+        showAnn = true;
+      }
+      if (!showAnn) continue;
 
-  // Henüz kaydedilmemiş bir çizim varsa (çizim anında)
-  if (isEditMode && !State.activeAnnotationId && State.box.active && State.box.width > 5) {
-    const bx = State.box.x * scale;
-    const by = State.box.y * scale;
-    const bw = State.box.width * scale;
-    const bh = State.box.height * scale;
-    drawEditHandles(targetCtx, bx, by, bw, bh);
+      const bx = ann.box.x * scale;
+      const by = ann.box.y * scale;
+      const bw = ann.box.width * scale;
+      const bh = ann.box.height * scale;
+
+      drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, false, ann);
+      if (ann.type === 'correct' && ann.checkmark?.enabled) {
+        drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, false, ann);
+      } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
+        drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, false, ann);
+      }
+    }
+
+    // 2. Şıklar için Referans 1, 2, 3 Sinematik Akışı
+    const validChoices = choiceAnns.filter(a => !a.isPending && a.box && a.box.width > 5);
+    validChoices.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+    if (validChoices.length > 0) {
+      let simTime = currentTime;
+      if (isTestingAnim) {
+        const elapsed = (performance.now() - State.playback.animTestStartTime) / 1000;
+        const activeAnn = getActiveAnnotation();
+        simTime = (activeAnn?.isChoice ? (activeAnn.timestamp || 0) : (validChoices[0].timestamp || 0)) + elapsed;
+      }
+
+      const firstChoiceTime = validChoices[0].timestamp || 0;
+      const isChoicesActive = simTime >= firstChoiceTime;
+
+      if (isChoicesActive) {
+        // Arka planı hafifçe karart (Referans 1, 2, 3 - Odaklanma Alanı Hariç)
+        targetCtx.save();
+        targetCtx.fillStyle = 'rgba(15, 23, 42, 0.22)';
+        targetCtx.fillRect(0, 0, canvasW, canvasH);
+        targetCtx.restore();
+
+        for (let i = 0; i < validChoices.length; i++) {
+          const choice = validChoices[i];
+          const start = choice.timestamp || 0;
+          const nextStart = (i < validChoices.length - 1)
+            ? (validChoices[i + 1].timestamp || (start + 4.0))
+            : (State.audio.duration || (start + 5.0));
+          const duration = Math.max(0.8, nextStart - start);
+          const ratio = State.choiceLayout.verdictRatio || 0.65;
+          const verdictDelay = choice.verdictDelay ?? Math.max(0.5, Math.min(duration - 0.6, duration * ratio));
+          const verdictTime = start + verdictDelay;
+
+          const bx = choice.box.x * scale;
+          const by = choice.box.y * scale;
+          const bw = choice.box.width * scale;
+          const bh = choice.box.height * scale;
+
+          if (simTime < start) continue; // Henüz bu şıkkın zamanı gelmedi
+
+          // Aşama 1: Şık Aktif Olarak Okunuyor / Odaklanma (Referans 1 & 2)
+          if (simTime < verdictTime) {
+            const enterElapsed = simTime - start;
+            const enterProgress = Math.min(1.0, enterElapsed / 0.30);
+            const animScale = easeOutBack(enterProgress);
+            drawActiveChoiceFocusBox(targetCtx, bx, by, bw, bh, scale, animScale, enterProgress);
+          }
+          // Aşama 2 & 3: Karar Verildi veya Sonraki Şıklara Geçildi (Referans 2 & 3)
+          else {
+            const isPast = simTime >= nextStart;
+            const verdictElapsed = simTime - verdictTime;
+            const verdictProgress = isPast ? 1.0 : Math.min(1.0, verdictElapsed / 0.35);
+
+            if (choice.type === 'wrong') {
+              // Referans 2 & 3: Yanlış şıklarda KUTU YOK! Sadece solunda kırmızı dairesel ✕ rozeti var
+              drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, verdictProgress);
+            } else {
+              // Referans 3: Doğru şıkta yeşil parlayan kutu + sağında [✓] Doğru cevap rozeti
+              drawCorrectChoiceBox(targetCtx, bx, by, bw, bh, scale, 1.0, 1.0);
+              drawCorrectChoicePillBadge(targetCtx, bx, by, bw, bh, scale, verdictProgress);
+            }
+          }
+        }
+      }
+    }
   }
 
   // 3. İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar)
   if (State.retentionBar.enabled) {
     drawRetentionBar(targetCtx, currentTime, State.audio.duration);
   }
+}
+
+/**
+ * Orijinal görselden keskin ve aydınlık dilim keser (Karartmayı aktif şık içinde iptal eder)
+ */
+function cutoutImageSlice(targetCtx, bx, by, bw, bh, radius) {
+  if (!State.image.element) return;
+  const canvasW = targetCtx.canvas.width;
+  const canvasH = targetCtx.canvas.height;
+  targetCtx.save();
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) {
+    targetCtx.roundRect(bx, by, bw, bh, radius);
+  } else {
+    drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  }
+  targetCtx.clip();
+  targetCtx.drawImage(State.image.element, 0, 0, canvasW, canvasH);
+  targetCtx.restore();
+}
+
+/**
+ * Referans 1 & 2: Aktif Şık Odaklanma Kutusu (Sıcak Amber Parlayan Çerçeve + Aydınlık Kesit)
+ */
+function drawActiveChoiceFocusBox(targetCtx, bx, by, bw, bh, scale, animScale = 1.0, animAlpha = 1.0) {
+  const radius = Math.max(6, Math.min(16, bh * 0.35));
+  const centerX = bx + bw / 2;
+  const centerY = by + bh / 2;
+
+  targetCtx.save();
+  if (animScale !== 1.0) {
+    targetCtx.translate(centerX, centerY);
+    targetCtx.scale(animScale, animScale);
+    targetCtx.translate(-centerX, -centerY);
+  }
+
+  // 1. Keskin ve aydınlık orijinal görsel dilimi (cutout)
+  cutoutImageSlice(targetCtx, bx, by, bw, bh, radius);
+
+  // 2. Çok hafif sıcak amber dolgusu (şeffaf iç ışıltı)
+  targetCtx.fillStyle = `rgba(245, 158, 11, ${0.05 * animAlpha})`;
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  targetCtx.fill();
+
+  // 3. Sıcak amber parlayan çerçeve (#f59e0b)
+  targetCtx.strokeStyle = `rgba(245, 158, 11, ${animAlpha})`;
+  targetCtx.lineWidth = Math.max(2.5, 3.5 * scale);
+  targetCtx.shadowColor = '#f59e0b';
+  targetCtx.shadowBlur = Math.round(10 * scale);
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  targetCtx.stroke();
+
+  targetCtx.restore();
+}
+
+/**
+ * Referans 3: Doğru Cevap Kutusu (Zümrüt Yeşili Parlayan Çerçeve + Aydınlık Kesit)
+ */
+function drawCorrectChoiceBox(targetCtx, bx, by, bw, bh, scale, animScale = 1.0, animAlpha = 1.0) {
+  const radius = Math.max(6, Math.min(16, bh * 0.35));
+  const centerX = bx + bw / 2;
+  const centerY = by + bh / 2;
+
+  targetCtx.save();
+  if (animScale !== 1.0) {
+    targetCtx.translate(centerX, centerY);
+    targetCtx.scale(animScale, animScale);
+    targetCtx.translate(-centerX, -centerY);
+  }
+
+  // 1. Keskin ve aydınlık orijinal görsel dilimi (cutout)
+  cutoutImageSlice(targetCtx, bx, by, bw, bh, radius);
+
+  // 2. Zümrüt yeşili hafif dolgu
+  targetCtx.fillStyle = `rgba(34, 197, 94, ${0.06 * animAlpha})`;
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  targetCtx.fill();
+
+  // 3. Zümrüt yeşili parlayan çerçeve (#22c55e)
+  targetCtx.strokeStyle = `rgba(34, 197, 94, ${animAlpha})`;
+  targetCtx.lineWidth = Math.max(2.5, 3.5 * scale);
+  targetCtx.shadowColor = '#22c55e';
+  targetCtx.shadowBlur = Math.round(10 * scale);
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+  targetCtx.stroke();
+
+  targetCtx.restore();
+}
+
+/**
+ * Düzenleme modunda yanlış şıkkın sınırını gösteren zarif kesikli çerçeve
+ */
+function drawChoiceEditBox(targetCtx, bx, by, bw, bh, scale, ann, type) {
+  const radius = Math.max(6, Math.min(16, bh * 0.35));
+  targetCtx.save();
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(bx, by, bw, bh, radius);
+  else drawRoundRectFallback(targetCtx, bx, by, bw, bh, radius);
+
+  if (type === 'wrong') {
+    targetCtx.strokeStyle = 'rgba(239, 68, 68, 0.45)';
+    targetCtx.lineWidth = Math.max(1.5, 2.0 * scale);
+    targetCtx.setLineDash([5 * scale, 3 * scale]);
+    targetCtx.stroke();
+    targetCtx.fillStyle = 'rgba(239, 68, 68, 0.04)';
+    targetCtx.fill();
+  }
+  targetCtx.restore();
+}
+
+/**
+ * Referans 2 & 3: Yanlış Şık Kırmızı Dairesel Çarpı Rozeti (Sadece Sol Tarafta)
+ */
+function drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, animProgress = 1.0) {
+  const R = Math.max(12, Math.min(22, bh * 0.42));
+  let cx = bx - R - 12 * scale;
+  let cy = by + bh / 2;
+  if (cx - R < 6) {
+    cx = R + 6;
+  }
+
+  const badgeScale = easeOutBack(Math.max(0.01, Math.min(1.0, animProgress)));
+  if (badgeScale <= 0.01) return;
+
+  targetCtx.save();
+  targetCtx.translate(cx, cy);
+  targetCtx.scale(badgeScale, badgeScale);
+
+  // 1. Kırmızı daire rozet
+  targetCtx.beginPath();
+  targetCtx.arc(0, 0, R, 0, 2 * Math.PI);
+  targetCtx.fillStyle = '#ef4444';
+  targetCtx.shadowColor = '#ef4444';
+  targetCtx.shadowBlur = Math.round(6 * scale);
+  targetCtx.fill();
+
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(1.5, 2.0 * scale);
+  targetCtx.stroke();
+
+  // 2. Beyaz Çarpı (✕)
+  targetCtx.shadowBlur = 0;
+  targetCtx.beginPath();
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(2.2, 3.2 * scale);
+  targetCtx.lineCap = 'round';
+  const arm = 0.40 * R;
+  targetCtx.moveTo(-arm, -arm);
+  targetCtx.lineTo(arm, arm);
+  targetCtx.moveTo(arm, -arm);
+  targetCtx.lineTo(-arm, arm);
+  targetCtx.stroke();
+
+  targetCtx.restore();
+}
+
+/**
+ * Referans 3: Doğru Cevap Rozeti (Sağ Tarafta [✓] ve [Doğru cevap] Yeşil Hap Rozeti)
+ */
+function drawCorrectChoicePillBadge(targetCtx, bx, by, bw, bh, scale, animProgress = 1.0) {
+  const pillH = Math.max(24, Math.min(34, bh * 0.88));
+  const R = pillH / 2;
+  const canvasW = targetCtx.canvas.width;
+  let circleX = bx + bw + R + 10 * scale;
+  const circleY = by + bh / 2;
+
+  const animScale = easeOutBack(Math.max(0.01, Math.min(1.0, animProgress)));
+  if (animScale <= 0.01) return;
+
+  const pillGap = 6 * scale;
+  const fontSize = Math.max(11, Math.round(13 * scale));
+  targetCtx.font = `bold ${fontSize}px "Plus Jakarta Sans", system-ui, -apple-system, sans-serif`;
+  const textW = targetCtx.measureText("Doğru cevap").width;
+  const pillW = textW + 18 * scale;
+
+  // Sağ kenardan taşma koruması
+  const totalRight = circleX + R + pillGap + pillW;
+  if (totalRight > canvasW - 8) {
+    const shift = totalRight - (canvasW - 8);
+    circleX = Math.max(bx + bw + R + 4 * scale, circleX - shift);
+  }
+
+  targetCtx.save();
+  targetCtx.translate(circleX, circleY);
+  targetCtx.scale(animScale, animScale);
+
+  // 1. Yeşil onay dairesi [✓]
+  targetCtx.beginPath();
+  targetCtx.arc(0, 0, R, 0, 2 * Math.PI);
+  targetCtx.fillStyle = '#16a34a';
+  targetCtx.shadowColor = '#16a34a';
+  targetCtx.shadowBlur = Math.round(6 * scale);
+  targetCtx.fill();
+
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(1.5, 2.0 * scale);
+  targetCtx.stroke();
+
+  // Beyaz onay işareti (✓)
+  targetCtx.shadowBlur = 0;
+  targetCtx.beginPath();
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(2.2, 3.0 * scale);
+  targetCtx.lineCap = 'round';
+  targetCtx.lineJoin = 'round';
+  targetCtx.moveTo(-0.40 * R, -0.02 * R);
+  targetCtx.lineTo(-0.10 * R, 0.36 * R);
+  targetCtx.lineTo(0.42 * R, -0.34 * R);
+  targetCtx.stroke();
+
+  // 2. "Doğru cevap" yeşil hap rozeti
+  const pillStartX = R + pillGap;
+  const pillTop = -pillH / 2;
+
+  targetCtx.beginPath();
+  if (targetCtx.roundRect) targetCtx.roundRect(pillStartX, pillTop, pillW, pillH, pillH / 2);
+  else drawRoundRectFallback(targetCtx, pillStartX, pillTop, pillW, pillH, pillH / 2);
+  targetCtx.fillStyle = '#16a34a';
+  targetCtx.shadowColor = '#16a34a';
+  targetCtx.shadowBlur = Math.round(6 * scale);
+  targetCtx.fill();
+
+  targetCtx.strokeStyle = '#ffffff';
+  targetCtx.lineWidth = Math.max(1.2, 1.8 * scale);
+  targetCtx.stroke();
+
+  // Beyaz metin
+  targetCtx.shadowBlur = 0;
+  targetCtx.fillStyle = '#ffffff';
+  targetCtx.textAlign = 'center';
+  targetCtx.textBaseline = 'middle';
+  targetCtx.fillText("Doğru cevap", pillStartX + pillW / 2, 0);
+
+  targetCtx.restore();
 }
 
 /**
@@ -2829,15 +3284,21 @@ function drawEditHandles(c, bx, by, bw, bh) {
   c.strokeRect(bx, by, bw, bh);
   c.setLineDash([]);
 
+  // Kutu küçük veya ince olduğunda (bh < 36 veya bw < 60), sadece 4 köşe tutamacını çiz
+  // Böylece tutamaçlar birbirinin üzerine binmez ve metni kapatmaz
+  const onlyCorners = (bh < 36 || bw < 60);
+  const handleKeys = onlyCorners ? ['nw', 'ne', 'se', 'sw'] : HANDLES;
+  const dynRadius = Math.max(3.5, Math.min(HANDLE_RADIUS, bh * 0.18));
+
   const handles = getHandlePositions({ x: bx, y: by, w: bw, h: bh });
-  for (const h of HANDLES) {
+  for (const h of handleKeys) {
     const hp = handles[h];
     c.beginPath();
-    c.arc(hp.x, hp.y, HANDLE_RADIUS, 0, 2 * Math.PI);
+    c.arc(hp.x, hp.y, dynRadius, 0, 2 * Math.PI);
     c.fillStyle = '#10b981';
     c.fill();
     c.strokeStyle = '#ffffff';
-    c.lineWidth = 2;
+    c.lineWidth = 1.5;
     c.stroke();
   }
   c.restore();
@@ -3101,6 +3562,20 @@ function loadSettings() {
       if (DOM.exportEngine && prefs.export.engine) DOM.exportEngine.value = prefs.export.engine;
       if (DOM.exportResolution && prefs.export.resolution) DOM.exportResolution.value = prefs.export.resolution;
       if (DOM.exportFps && prefs.export.fps) DOM.exportFps.value = prefs.export.fps;
+    }
+
+    // Toplu Şık Boyutları ve Hizalama
+    if (DOM.sliderChoiceBulkWidth) {
+      DOM.sliderChoiceBulkWidth.value = State.choiceLayout.width;
+      if (DOM.textChoiceBulkWidth) DOM.textChoiceBulkWidth.textContent = State.choiceLayout.width + 'px';
+    }
+    if (DOM.sliderChoiceBulkHeight) {
+      DOM.sliderChoiceBulkHeight.value = State.choiceLayout.height;
+      if (DOM.textChoiceBulkHeight) DOM.textChoiceBulkHeight.textContent = State.choiceLayout.height + 'px';
+    }
+    if (DOM.sliderChoiceBulkGap) {
+      DOM.sliderChoiceBulkGap.value = State.choiceLayout.gap;
+      if (DOM.textChoiceBulkGap) DOM.textChoiceBulkGap.textContent = State.choiceLayout.gap + 'px';
     }
   } catch (e) {
     console.warn('Kayıtlı ayarlar okunurken hata:', e);
