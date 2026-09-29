@@ -49,6 +49,11 @@ const State = {
     gap: parseInt(localStorage.getItem('soru_choice_gap'), 10) || 20,
     verdictRatio: parseFloat(localStorage.getItem('soru_choice_verdict_ratio')) || 0.65,
   },
+  timeline: {
+    zoom: 1.0,
+    selectedMarkerId: null,
+    selectedMarkerType: 'start',
+  },
 
   // Aktif Seçili Kutu (Geriye dönük uyumluluk ve tutamaçlar için)
   box: {
@@ -134,7 +139,7 @@ const DOM = {
   btnNudgeNextSec: document.getElementById('btn-nudge-next-sec'),
   btnClearAllChoices: document.getElementById('btn-clear-all-choices'),
 
-  // Toplu Şık Boyutlandırma & Hizalama
+  // Toplu Şık Boyutlandırma & Kolon Hizalama
   sliderChoiceBulkWidth: document.getElementById('slider-choice-bulk-width'),
   textChoiceBulkWidth: document.getElementById('text-choice-bulk-width'),
   sliderChoiceBulkHeight: document.getElementById('slider-choice-bulk-height'),
@@ -143,6 +148,12 @@ const DOM = {
   textChoiceBulkGap: document.getElementById('text-choice-bulk-gap'),
   sliderChoiceBulkVerdict: document.getElementById('slider-choice-bulk-verdict'),
   textChoiceBulkVerdict: document.getElementById('text-choice-bulk-verdict'),
+  btnAlignChoicesLeft: document.getElementById('btn-align-choices-left'),
+  btnEqualizeChoicesWidth: document.getElementById('btn-equalize-choices-width'),
+  btnDistributeChoicesGap: document.getElementById('btn-distribute-choices-gap'),
+  btnPerfectChoicesColumn: document.getElementById('btn-perfect-choices-column'),
+  sliderChoiceBulkX: document.getElementById('slider-choice-bulk-x'),
+  textChoiceBulkX: document.getElementById('text-choice-bulk-x'),
 
   // AI Setup Modal
   btnOpenAiSettings: document.getElementById('btn-open-ai-settings'),
@@ -156,7 +167,7 @@ const DOM = {
   aiSettingsMsg: document.getElementById('ai-settings-msg'),
   aiKeyStatusDot: document.getElementById('ai-key-status-dot'),
 
-  // Waveform & Audio
+  // Waveform & Interactive Timeline (Referans 2)
   btnAudioPlay: document.getElementById('btn-audio-play'),
   btnAudioBack: document.getElementById('btn-audio-back'),
   btnAudioForward: document.getElementById('btn-audio-forward'),
@@ -167,8 +178,31 @@ const DOM = {
   btnPreviewHighlight: document.getElementById('btn-preview-highlight'),
   badgeMarkedTime: document.getElementById('badge-marked-time'),
   waveformContainer: document.getElementById('waveform-container'),
-  waveformTimeline: document.getElementById('waveform-timeline'),
   audioEmptyNotice: document.getElementById('audio-empty-notice'),
+  btnTimelineZoomOut: document.getElementById('btn-timeline-zoom-out'),
+  btnTimelineZoomIn: document.getElementById('btn-timeline-zoom-in'),
+  btnTimelineZoomFit: document.getElementById('btn-timeline-zoom-fit'),
+  badgeTimelineZoom: document.getElementById('badge-timeline-zoom'),
+  timelineOuterScroll: document.getElementById('timeline-outer-scroll'),
+  timelineZoomableContainer: document.getElementById('timeline-zoomable-container'),
+  waveformRuler: document.getElementById('waveform-ruler'),
+  timelineInteractiveTrack: document.getElementById('timeline-interactive-track'),
+  timelinePlayhead: document.getElementById('timeline-playhead'),
+  timelineMarkersLayer: document.getElementById('timeline-markers-layer'),
+  timelineDragTooltip: document.getElementById('timeline-drag-tooltip'),
+  timelineInspectorBar: document.getElementById('timeline-inspector-bar'),
+  timelineInspectorEmpty: document.getElementById('timeline-inspector-empty'),
+  timelineInspectorActive: document.getElementById('timeline-inspector-active'),
+  timelineInspectorBadge: document.getElementById('timeline-inspector-badge'),
+  timelineInspectorTime: document.getElementById('timeline-inspector-time'),
+  btnTiNudgeLargePrev: document.getElementById('btn-ti-nudge-large-prev'),
+  btnTiNudgePrev: document.getElementById('btn-ti-nudge-prev'),
+  btnTiNudgeNext: document.getElementById('btn-ti-nudge-next'),
+  btnTiNudgeLargeNext: document.getElementById('btn-ti-nudge-large-next'),
+  btnTiDurationDown: document.getElementById('btn-ti-duration-down'),
+  btnTiDurationUp: document.getElementById('btn-ti-duration-up'),
+  btnTiPlay: document.getElementById('btn-ti-play'),
+  btnTiDelete: document.getElementById('btn-ti-delete'),
   nativeAudio: document.getElementById('native-audio'),
 
   // File Inputs
@@ -278,12 +312,14 @@ function initWaveSurfer() {
     responsive: true,
   });
 
-  wavesurfer.on('ready', () => {
+    wavesurfer.on('ready', () => {
     State.audio.duration = wavesurfer.getDuration();
     DOM.audioTotalTime.textContent = formatTime(State.audio.duration);
     DOM.btnAudioPlay.disabled = false;
     DOM.btnMarkTimestamp.disabled = false;
     DOM.btnPreviewHighlight.disabled = false;
+    if (DOM.timelineZoomableContainer) DOM.timelineZoomableContainer.classList.remove('hidden');
+    renderTimeline();
     updateRenderButtonState();
     updateStepIndicator();
   });
@@ -291,6 +327,7 @@ function initWaveSurfer() {
   wavesurfer.on('timeupdate', (currentTime) => {
     State.playback.currentTime = currentTime;
     DOM.audioCurrentTime.textContent = formatTime(currentTime);
+    updateTimelinePlayhead(currentTime);
     renderCanvas();
   });
 
@@ -308,6 +345,7 @@ function initWaveSurfer() {
   wavesurfer.on('finish', () => {
     State.playback.isPlaying = false;
     updatePlayIcon(false);
+    updateTimelinePlayhead(State.audio.duration);
     renderCanvas();
   });
 }
@@ -319,6 +357,442 @@ function updatePlayIcon(isPlaying) {
     lucide.createIcons({ root: DOM.btnAudioPlay });
   }
 }
+
+// ==========================================
+// 1.5. İNTERAKTİF ZAMAN ŞERİDİ (TIMELINE & SÜRÜKLEME MOTORU - REFERANS 2)
+// ==========================================
+let timelineDragState = null;
+
+function renderTimeline() {
+  if (!DOM.timelineInteractiveTrack || !State.audio.duration || State.audio.duration <= 0) return;
+  renderTimelineRuler();
+  renderTimelineMarkers();
+  updateTimelinePlayhead(State.playback.currentTime || 0);
+  updateTimelineInspector();
+}
+
+function renderTimelineRuler() {
+  if (!DOM.waveformRuler) return;
+  DOM.waveformRuler.innerHTML = '';
+  const D = State.audio.duration;
+  if (!D || D <= 0) return;
+
+  let step = 5;
+  if (D > 180) step = 30;
+  else if (D > 90) step = 15;
+  else if (D > 45) step = 10;
+  else if (D < 15) step = 2;
+
+  for (let t = 0; t <= D; t += step) {
+    const pct = (t / D) * 100;
+    const tick = document.createElement('div');
+    tick.className = 'absolute top-0 bottom-0 flex flex-col justify-between';
+    tick.style.left = `${pct}%`;
+    tick.innerHTML = `
+      <div class="h-1.5 w-px bg-zinc-700"></div>
+      <span class="transform -translate-x-1/2 text-[9px] text-zinc-500 font-mono">${formatTime(t)}</span>
+    `;
+    DOM.waveformRuler.appendChild(tick);
+  }
+}
+
+function updateTimelinePlayhead(currentTime) {
+  if (!DOM.timelinePlayhead || !State.audio.duration || State.audio.duration <= 0) return;
+  const pct = Math.max(0, Math.min(100, (currentTime / State.audio.duration) * 100));
+  DOM.timelinePlayhead.style.left = `${pct}%`;
+}
+
+function renderTimelineMarkers() {
+  if (!DOM.timelineMarkersLayer || !State.audio.duration || State.audio.duration <= 0) return;
+  DOM.timelineMarkersLayer.innerHTML = '';
+  const D = State.audio.duration;
+
+  // 1. Genel Vurgular (Turuncu bloklar - Soru Kökü / Şekil)
+  const nonChoices = State.annotations.filter(a => !a.isChoice);
+  nonChoices.forEach((ann) => {
+    const start = Math.max(0, parseFloat(ann.timestamp) || 0);
+    const dur = Math.max(0.4, parseFloat(ann.animDuration) || 1.2);
+    const leftPct = (start / D) * 100;
+    const widthPct = Math.max(1.5, Math.min(100 - leftPct, (dur / D) * 100));
+    const isSelected = State.timeline.selectedMarkerId === ann.id && State.timeline.selectedMarkerType === 'ann';
+
+    const block = document.createElement('div');
+    block.className = `absolute h-7 rounded-lg border text-[10px] font-mono flex items-center justify-between px-2 cursor-grab active:cursor-grabbing select-none shadow-md transition-all z-20 ${
+      isSelected
+        ? 'bg-amber-500 text-zinc-950 border-white ring-2 ring-amber-400 font-bold shadow-amber-900/80 scale-[1.02]'
+        : 'bg-amber-600/90 hover:bg-amber-500 text-white border-amber-400/50 shadow-amber-950/70'
+    }`;
+    block.style.left = `${leftPct}%`;
+    block.style.width = `${widthPct}%`;
+    block.style.top = '4px';
+    block.dataset.annId = ann.id;
+    block.dataset.markerType = 'ann';
+    block.title = `${ann.label || 'Vurgu'} (${start.toFixed(2)}s - Süre: ${dur.toFixed(2)}s)`;
+
+    block.innerHTML = `
+      <span class="truncate pointer-events-none font-semibold flex items-center gap-1">
+        <span>🟠</span>
+        <span>${ann.label || 'Vurgu'}</span>
+      </span>
+      <span class="resize-handle h-full w-2.5 flex items-center justify-center cursor-ew-resize opacity-60 hover:opacity-100 flex-shrink-0 ml-1 font-sans text-xs" title="Kenardan çekerek süreyi uzatın/kısaltın">⋮</span>
+    `;
+
+    DOM.timelineMarkersLayer.appendChild(block);
+  });
+
+  // 2. Şık Başlangıç & Karar Rozetleri (Referans 2: A, B, C, D, E, ✕, ✓)
+  const choiceAnns = State.annotations.filter(a => a.isChoice && !a.isPending);
+  choiceAnns.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+  for (let i = 0; i < choiceAnns.length; i++) {
+    const c = choiceAnns[i];
+    const start = Math.max(0, parseFloat(c.timestamp) || 0);
+    const isLast = (i === choiceAnns.length - 1);
+    const nextStart = !isLast ? (Math.max(0, parseFloat(choiceAnns[i + 1].timestamp) || (start + 4.0))) : D;
+    const dur = Math.max(0.8, nextStart - start);
+    const ratio = State.choiceLayout.verdictRatio || 0.65;
+
+    let verdictTime;
+    if (c.verdictTimestamp && c.verdictTimestamp > start) {
+      verdictTime = c.verdictTimestamp;
+    } else if (isLast) {
+      const dTs = getDolayisiylaTimestamp(start);
+      verdictTime = dTs || (start + Math.min(2.5, Math.max(0.8, dur * ratio)));
+    } else {
+      verdictTime = start + (c.verdictDelay ?? Math.max(0.5, dur * ratio));
+    }
+
+    const startPct = Math.min(100, Math.max(0, (start / D) * 100));
+    const verdictPct = Math.min(100, Math.max(0, (verdictTime / D) * 100));
+    const nextPct = Math.min(100, Math.max(0, (nextStart / D) * 100));
+
+    // A. Bağlantı Çizgisi
+    const line = document.createElement('div');
+    line.className = 'absolute h-1 top-[22px] pointer-events-none z-10 rounded-full';
+    line.style.left = `${startPct}%`;
+    line.style.width = `${Math.max(0, nextPct - startPct)}%`;
+    line.style.background = c.type === 'wrong'
+      ? 'linear-gradient(to right, rgba(99, 102, 241, 0.6) 0%, rgba(244, 63, 94, 0.5) 100%)'
+      : 'linear-gradient(to right, rgba(99, 102, 241, 0.6) 0%, rgba(34, 197, 94, 0.6) 100%)';
+    DOM.timelineMarkersLayer.appendChild(line);
+
+    // B. Şık Başlangıç Rozeti (Mavi/İndigo: [🏷️ A])
+    const isStartSelected = State.timeline.selectedMarkerId === c.id && State.timeline.selectedMarkerType === 'start';
+    const pillStart = document.createElement('div');
+    pillStart.className = `absolute h-7 px-2 rounded-full border text-[10px] font-mono font-bold flex items-center justify-center gap-1 cursor-grab active:cursor-grabbing select-none shadow-md z-20 transform -translate-x-1/2 transition-transform hover:scale-105 ${
+      isStartSelected
+        ? 'bg-indigo-400 text-zinc-950 border-white ring-2 ring-indigo-300 scale-110 shadow-indigo-900'
+        : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-400/50 shadow-indigo-950/80'
+    }`;
+    pillStart.style.left = `${startPct}%`;
+    pillStart.style.top = '10px';
+    pillStart.dataset.annId = c.id;
+    pillStart.dataset.markerType = 'start';
+    pillStart.title = `${c.choiceLetter} Şıkkı Başlangıç (${start.toFixed(2)}s) - Sürükleyin`;
+    pillStart.innerHTML = `<span>🏷️ ${c.choiceLetter}</span>`;
+    DOM.timelineMarkersLayer.appendChild(pillStart);
+
+    // C. Şık Karar Rozeti (Kırmızı ✕ veya Yeşil ✓)
+    const isVerdictSelected = State.timeline.selectedMarkerId === c.id && State.timeline.selectedMarkerType === 'verdict';
+    const pillVerdict = document.createElement('div');
+    const isWrong = c.type === 'wrong';
+
+    pillVerdict.className = `absolute h-6 w-6 rounded-full border text-[11px] font-mono font-bold flex items-center justify-center cursor-grab active:cursor-grabbing select-none shadow-md z-20 transform -translate-x-1/2 transition-transform hover:scale-105 ${
+      isWrong
+        ? (isVerdictSelected
+            ? 'bg-rose-400 text-zinc-950 border-white ring-2 ring-rose-400 scale-110 shadow-rose-900'
+            : 'bg-rose-600 hover:bg-rose-500 text-white border-rose-400/50 shadow-rose-950/80')
+        : (isVerdictSelected
+            ? 'bg-emerald-400 text-zinc-950 border-white ring-2 ring-emerald-400 scale-110 shadow-emerald-900'
+            : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/80')
+    }`;
+    pillVerdict.style.left = `${verdictPct}%`;
+    pillVerdict.style.top = '11px';
+    pillVerdict.dataset.annId = c.id;
+    pillVerdict.dataset.markerType = 'verdict';
+    pillVerdict.title = `${c.choiceLetter} Şıkkı ${isWrong ? '✕ Eleme' : '✓ Doğru Cevap'} (${verdictTime.toFixed(2)}s) - Sürükleyin`;
+    pillVerdict.innerHTML = `<span>${isWrong ? '✕' : '✓'}</span>`;
+    DOM.timelineMarkersLayer.appendChild(pillVerdict);
+  }
+}
+
+function setupTimelineInteractions() {
+  if (!DOM.timelineInteractiveTrack) return;
+  const track = DOM.timelineInteractiveTrack;
+
+  track.addEventListener('mousedown', (e) => {
+    if (!State.audio.duration || State.audio.duration <= 0) return;
+    const D = State.audio.duration;
+    const rect = track.getBoundingClientRect();
+
+    const targetHandle = e.target.closest('.resize-handle');
+    const targetMarker = e.target.closest('[data-ann-id]');
+
+    if (targetHandle && targetMarker) {
+      const annId = targetMarker.dataset.annId;
+      const ann = State.annotations.find(a => a.id === annId);
+      if (ann) {
+        timelineDragState = {
+          mode: 'duration',
+          ann: ann,
+          startX: e.clientX,
+          initialDur: parseFloat(ann.animDuration) || 1.2,
+          trackWidth: rect.width,
+          D: D
+        };
+        State.timeline.selectedMarkerId = ann.id;
+        State.timeline.selectedMarkerType = 'duration';
+        updateTimelineInspector();
+        renderTimelineMarkers();
+        e.preventDefault();
+        return;
+      }
+    }
+
+    if (targetMarker) {
+      const annId = targetMarker.dataset.annId;
+      const markerType = targetMarker.dataset.markerType;
+      const ann = State.annotations.find(a => a.id === annId);
+      if (ann) {
+        timelineDragState = {
+          mode: markerType,
+          ann: ann,
+          startX: e.clientX,
+          initialTs: (markerType === 'verdict') ? (ann.verdictTimestamp || ann.timestamp) : (ann.timestamp || 0),
+          trackWidth: rect.width,
+          trackLeft: rect.left,
+          D: D
+        };
+        State.timeline.selectedMarkerId = ann.id;
+        State.timeline.selectedMarkerType = markerType;
+        selectAnnotation(ann.id);
+        updateTimelineInspector();
+        renderTimelineMarkers();
+
+        const targetTs = (markerType === 'verdict') ? (ann.verdictTimestamp || ann.timestamp) : ann.timestamp;
+        if (wavesurfer && targetTs !== undefined) {
+          wavesurfer.setTime(Math.max(0, Math.min(D, targetTs)));
+        }
+        e.preventDefault();
+        return;
+      }
+    }
+
+    // Boş bir noktaya tıklandıysa: Oynatıcıyı doğrudan o saniyeye atla
+    const clickPct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const seekTime = clickPct * D;
+    if (wavesurfer) {
+      wavesurfer.setTime(seekTime);
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!timelineDragState) return;
+    const { mode, ann, startX, initialDur, initialTs, trackWidth, D } = timelineDragState;
+    const currentX = e.clientX;
+    const deltaX = currentX - startX;
+    const deltaSec = (deltaX / trackWidth) * D;
+
+    if (mode === 'duration') {
+      const newDur = Math.max(0.3, Math.min(15, initialDur + deltaSec));
+      ann.animDuration = parseFloat(newDur.toFixed(2));
+      showTimelineTooltip(currentX, `${ann.label || 'Vurgu'} Süre: ${ann.animDuration.toFixed(2)}s`);
+      renderTimelineMarkers();
+      renderCanvas();
+    } else if (mode === 'verdict') {
+      const minVerdict = (ann.timestamp || 0) + 0.2;
+      const newTs = Math.max(minVerdict, Math.min(D, initialTs + deltaSec));
+      ann.verdictTimestamp = parseFloat(newTs.toFixed(2));
+      showTimelineTooltip(currentX, `${ann.choiceLetter || ''} Karar: ${ann.verdictTimestamp.toFixed(2)}s`);
+      if (wavesurfer) wavesurfer.setTime(newTs);
+      renderTimelineMarkers();
+      renderCanvas();
+    } else {
+      const newTs = Math.max(0, Math.min(D, initialTs + deltaSec));
+      ann.timestamp = parseFloat(newTs.toFixed(2));
+      if (ann.verdictTimestamp && ann.verdictTimestamp < ann.timestamp + 0.3) {
+        ann.verdictTimestamp = parseFloat((ann.timestamp + 1.2).toFixed(2));
+      }
+      showTimelineTooltip(currentX, `${ann.choiceLetter ? (ann.choiceLetter + ' Şıkkı') : (ann.label || 'Vurgu')}: ${ann.timestamp.toFixed(2)}s`);
+      if (wavesurfer) wavesurfer.setTime(newTs);
+      renderTimelineMarkers();
+      renderCanvas();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (timelineDragState) {
+      timelineDragState = null;
+      hideTimelineTooltip();
+      renderAnnotationsList();
+      renderTimeline();
+      updateFfmpegCommand();
+    }
+  });
+}
+
+function showTimelineTooltip(clientX, text) {
+  if (!DOM.timelineDragTooltip || !DOM.timelineInteractiveTrack) return;
+  const rect = DOM.timelineInteractiveTrack.getBoundingClientRect();
+  const relX = clientX - rect.left;
+  DOM.timelineDragTooltip.style.left = `${Math.max(20, Math.min(rect.width - 20, relX))}px`;
+  DOM.timelineDragTooltip.textContent = text;
+  DOM.timelineDragTooltip.classList.remove('hidden');
+}
+
+function hideTimelineTooltip() {
+  if (DOM.timelineDragTooltip) {
+    DOM.timelineDragTooltip.classList.add('hidden');
+  }
+}
+
+function updateTimelineInspector() {
+  if (!DOM.timelineInspectorBar) return;
+  const selectedId = State.timeline.selectedMarkerId;
+  const selectedType = State.timeline.selectedMarkerType;
+
+  if (!selectedId) {
+    if (DOM.timelineInspectorActive) DOM.timelineInspectorActive.classList.add('hidden');
+    if (DOM.timelineInspectorActive) DOM.timelineInspectorActive.classList.remove('flex');
+    if (DOM.timelineInspectorEmpty) DOM.timelineInspectorEmpty.classList.remove('hidden');
+    return;
+  }
+
+  const ann = State.annotations.find(a => a.id === selectedId);
+  if (!ann) {
+    State.timeline.selectedMarkerId = null;
+    updateTimelineInspector();
+    return;
+  }
+
+  if (DOM.timelineInspectorEmpty) DOM.timelineInspectorEmpty.classList.add('hidden');
+  if (DOM.timelineInspectorActive) {
+    DOM.timelineInspectorActive.classList.remove('hidden');
+    DOM.timelineInspectorActive.classList.add('flex');
+  }
+
+  let badgeText = '';
+  let badgeClass = '';
+  let timeVal = 0;
+
+  if (ann.isChoice) {
+    if (selectedType === 'verdict') {
+      const isWrong = ann.type === 'wrong';
+      badgeText = isWrong ? `🔴 ${ann.choiceLetter} Şıkkı ✕ (Eleme)` : `🟢 ${ann.choiceLetter} Şıkkı ✓ (Doğru)`;
+      badgeClass = isWrong ? 'bg-rose-500/20 text-rose-300 border-rose-500/40' : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40';
+      timeVal = ann.verdictTimestamp || ((ann.timestamp || 0) + 1.5);
+    } else {
+      badgeText = `🏷️ ${ann.choiceLetter} Şıkkı Başlangıç`;
+      badgeClass = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40';
+      timeVal = ann.timestamp || 0;
+    }
+  } else {
+    badgeText = `🟠 ${ann.label || 'Vurgu'}`;
+    badgeClass = 'bg-amber-500/20 text-amber-300 border-amber-500/40';
+    timeVal = ann.timestamp || 0;
+  }
+
+  if (DOM.timelineInspectorBadge) {
+    DOM.timelineInspectorBadge.textContent = badgeText;
+    DOM.timelineInspectorBadge.className = `px-2.5 py-0.5 rounded font-mono font-bold text-xs border ${badgeClass}`;
+  }
+
+  if (DOM.timelineInspectorTime) {
+    DOM.timelineInspectorTime.textContent = `${timeVal.toFixed(2)}s`;
+  }
+}
+
+function nudgeSelectedMarker(delta) {
+  const selectedId = State.timeline.selectedMarkerId;
+  const selectedType = State.timeline.selectedMarkerType;
+  if (!selectedId) return;
+
+  const ann = State.annotations.find(a => a.id === selectedId);
+  if (!ann) return;
+
+  const D = State.audio.duration || 9999;
+  if (selectedType === 'verdict') {
+    const cur = ann.verdictTimestamp || ((ann.timestamp || 0) + 1.5);
+    ann.verdictTimestamp = Math.max((ann.timestamp || 0) + 0.1, Math.min(D, parseFloat((cur + delta).toFixed(2))));
+    if (wavesurfer) wavesurfer.setTime(ann.verdictTimestamp);
+  } else {
+    const cur = ann.timestamp || 0;
+    ann.timestamp = Math.max(0, Math.min(D, parseFloat((cur + delta).toFixed(2))));
+    if (wavesurfer) wavesurfer.setTime(ann.timestamp);
+  }
+
+  renderTimeline();
+  renderAnnotationsList();
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function adjustSelectedMarkerDuration(delta) {
+  const selectedId = State.timeline.selectedMarkerId;
+  if (!selectedId) return;
+
+  const ann = State.annotations.find(a => a.id === selectedId);
+  if (!ann) return;
+
+  if (ann.isChoice) {
+    const curVerdict = ann.verdictTimestamp || ((ann.timestamp || 0) + 1.5);
+    ann.verdictTimestamp = Math.max((ann.timestamp || 0) + 0.3, parseFloat((curVerdict + delta).toFixed(2)));
+  } else {
+    const curDur = ann.animDuration || 1.2;
+    ann.animDuration = Math.max(0.3, parseFloat((curDur + delta).toFixed(2)));
+  }
+
+  renderTimeline();
+  renderAnnotationsList();
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+// Zaman Şeridi Denetçi Butonları Dinleyicileri
+if (DOM.btnTiNudgeLargePrev) DOM.btnTiNudgeLargePrev.addEventListener('click', () => nudgeSelectedMarker(-0.5));
+if (DOM.btnTiNudgePrev) DOM.btnTiNudgePrev.addEventListener('click', () => nudgeSelectedMarker(-0.1));
+if (DOM.btnTiNudgeNext) DOM.btnTiNudgeNext.addEventListener('click', () => nudgeSelectedMarker(+0.1));
+if (DOM.btnTiNudgeLargeNext) DOM.btnTiNudgeLargeNext.addEventListener('click', () => nudgeSelectedMarker(+0.5));
+if (DOM.btnTiDurationDown) DOM.btnTiDurationDown.addEventListener('click', () => adjustSelectedMarkerDuration(-0.2));
+if (DOM.btnTiDurationUp) DOM.btnTiDurationUp.addEventListener('click', () => adjustSelectedMarkerDuration(+0.2));
+
+if (DOM.btnTiPlay) {
+  DOM.btnTiPlay.addEventListener('click', () => {
+    const selectedId = State.timeline.selectedMarkerId;
+    const selectedType = State.timeline.selectedMarkerType;
+    if (!selectedId || !wavesurfer) return;
+    const ann = State.annotations.find(a => a.id === selectedId);
+    if (!ann) return;
+
+    const t = (selectedType === 'verdict' && ann.verdictTimestamp) ? ann.verdictTimestamp : (ann.timestamp || 0);
+    wavesurfer.setTime(Math.max(0, t - 0.4));
+    wavesurfer.play();
+  });
+}
+
+if (DOM.btnTiDelete) {
+  DOM.btnTiDelete.addEventListener('click', () => {
+    const selectedId = State.timeline.selectedMarkerId;
+    if (!selectedId) return;
+    deleteAnnotation(selectedId);
+    State.timeline.selectedMarkerId = null;
+    updateTimelineInspector();
+    renderTimeline();
+  });
+}
+
+function setTimelineZoom(zoomVal) {
+  State.timeline.zoom = Math.max(1.0, Math.min(4.0, parseFloat(zoomVal.toFixed(1))));
+  if (DOM.badgeTimelineZoom) DOM.badgeTimelineZoom.textContent = `${State.timeline.zoom}x`;
+  if (DOM.timelineZoomableContainer) {
+    DOM.timelineZoomableContainer.style.width = `${State.timeline.zoom * 100}%`;
+  }
+  renderTimeline();
+}
+
+if (DOM.btnTimelineZoomIn) DOM.btnTimelineZoomIn.addEventListener('click', () => setTimelineZoom(State.timeline.zoom + 0.5));
+if (DOM.btnTimelineZoomOut) DOM.btnTimelineZoomOut.addEventListener('click', () => setTimelineZoom(State.timeline.zoom - 0.5));
+if (DOM.btnTimelineZoomFit) DOM.btnTimelineZoomFit.addEventListener('click', () => setTimelineZoom(1.0));
 
 // ==========================================
 // 2. DOSYA YÜKLEME VE YÖNETİMİ
@@ -577,6 +1051,10 @@ function selectAnnotation(id) {
   State.currentShape = ann.shape;
 
   syncControlsWithActive();
+  State.timeline.selectedMarkerId = id;
+  State.timeline.selectedMarkerType = 'start';
+  updateTimelineInspector();
+  renderTimeline();
   renderAnnotationsList();
   renderCanvas();
   updateFfmpegCommand();
@@ -596,6 +1074,11 @@ function deleteAnnotation(id) {
       State.box.height = 0;
     }
   }
+  if (State.timeline.selectedMarkerId === id) {
+    State.timeline.selectedMarkerId = null;
+    updateTimelineInspector();
+  }
+  renderTimeline();
   renderAnnotationsList();
   renderCanvas();
   updateFfmpegCommand();
@@ -606,6 +1089,7 @@ function deleteAnnotation(id) {
 function renderAnnotationsList() {
   if (!DOM.annotationsList) return;
   DOM.annotationsList.innerHTML = '';
+  renderTimeline();
 
   if (State.annotations.length === 0) {
     DOM.annotationsList.innerHTML = `<span class="text-zinc-500 italic text-[11px]">Henüz bir vurgu eklenmedi. Görsel üzerinde çizim yapın veya şıkları otomatik yerleştirin.</span>`;
@@ -869,10 +1353,24 @@ window.addEventListener('mousemove', (e) => {
   } else if (State.interaction.isDragging) {
     const dx = (pos.x - State.interaction.startX) * scale;
     const dy = (pos.y - State.interaction.startY) * scale;
-    State.box.x = Math.max(0, Math.min(State.interaction.boxStartX + dx, State.image.naturalWidth - State.box.width));
-    State.box.y = Math.max(0, Math.min(State.interaction.boxStartY + dy, State.image.naturalHeight - State.box.height));
+    let targetX = Math.max(0, Math.min(State.interaction.boxStartX + dx, State.image.naturalWidth - State.box.width));
+    let targetY = Math.max(0, Math.min(State.interaction.boxStartY + dy, State.image.naturalHeight - State.box.height));
 
     const ann = getActiveAnnotation();
+    // Manyetik Dikey Hizalama (Diğer şıkların sol kenarına otomatik yapışma)
+    if (ann && ann.isChoice) {
+      const otherChoices = State.annotations.filter(a => a.isChoice && a.id !== ann.id && a.box);
+      for (const other of otherChoices) {
+        if (Math.abs(targetX - other.box.x) <= 12) {
+          targetX = other.box.x; // Manyetik Snap!
+          break;
+        }
+      }
+    }
+
+    State.box.x = targetX;
+    State.box.y = targetY;
+
     if (ann) {
       ann.box.x = State.box.x;
       ann.box.y = State.box.y;
@@ -1725,6 +2223,84 @@ if (DOM.sliderChoiceBulkVerdict) {
 }
 
 // ------------------------------------------
+// DİKEY KOLON HİZALAMA & KUSURSUZ ŞIK DÜZELTME
+// ------------------------------------------
+function alignChoicesLeft() {
+  const choices = State.annotations.filter(a => a.isChoice && a.box);
+  if (choices.length === 0) return;
+  const minX = Math.min(...choices.map(c => c.box.x));
+  choices.forEach(c => { c.box.x = minX; });
+  if (State.box.active && State.activeAnnotationId) {
+    const active = getActiveAnnotation();
+    if (active && active.isChoice) State.box.x = minX;
+  }
+  if (DOM.sliderChoiceBulkX) DOM.sliderChoiceBulkX.value = minX;
+  if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = minX + 'px';
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function equalizeChoicesWidth() {
+  const choices = State.annotations.filter(a => a.isChoice && a.box);
+  if (choices.length === 0) return;
+  const targetW = State.choiceLayout.width || Math.max(...choices.map(c => c.box.width));
+  choices.forEach(c => { c.box.width = targetW; });
+  if (State.box.active && State.activeAnnotationId) {
+    const active = getActiveAnnotation();
+    if (active && active.isChoice) State.box.width = targetW;
+  }
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function distributeChoicesGap() {
+  const choices = State.annotations.filter(a => a.isChoice && a.box);
+  if (choices.length <= 1) return;
+  choices.sort((a, b) => a.box.y - b.box.y);
+  const gap = State.choiceLayout.gap !== undefined ? State.choiceLayout.gap : 20;
+  for (let i = 1; i < choices.length; i++) {
+    choices[i].box.y = choices[i - 1].box.y + choices[i - 1].box.height + gap;
+  }
+  if (State.box.active && State.activeAnnotationId) {
+    const active = getActiveAnnotation();
+    if (active && active.isChoice) State.box.y = active.box.y;
+  }
+  renderCanvas();
+  updateFfmpegCommand();
+}
+
+function makePerfectChoicesColumn() {
+  alignChoicesLeft();
+  equalizeChoicesWidth();
+  distributeChoicesGap();
+}
+
+if (DOM.btnAlignChoicesLeft) DOM.btnAlignChoicesLeft.addEventListener('click', alignChoicesLeft);
+if (DOM.btnEqualizeChoicesWidth) DOM.btnEqualizeChoicesWidth.addEventListener('click', equalizeChoicesWidth);
+if (DOM.btnDistributeChoicesGap) DOM.btnDistributeChoicesGap.addEventListener('click', distributeChoicesGap);
+if (DOM.btnPerfectChoicesColumn) DOM.btnPerfectChoicesColumn.addEventListener('click', makePerfectChoicesColumn);
+
+if (DOM.sliderChoiceBulkX) {
+  DOM.sliderChoiceBulkX.addEventListener('input', (e) => {
+    const newX = parseInt(e.target.value, 10);
+    const choices = State.annotations.filter(a => a.isChoice && a.box);
+    if (choices.length === 0) return;
+    const currentMinX = Math.min(...choices.map(c => c.box.x));
+    const delta = newX - currentMinX;
+    choices.forEach(c => {
+      c.box.x = Math.max(0, c.box.x + delta);
+    });
+    if (DOM.textChoiceBulkX) DOM.textChoiceBulkX.textContent = newX + 'px';
+    if (State.box.active && State.activeAnnotationId) {
+      const active = getActiveAnnotation();
+      if (active && active.isChoice) State.box.x = active.box.x;
+    }
+    renderCanvas();
+    updateFfmpegCommand();
+  });
+}
+
+// ------------------------------------------
 // YAPAY ZEKA ANAHTARLARI & KURULUM SİHİRBAZI
 // ------------------------------------------
 function updateAiKeyStatus() {
@@ -2421,18 +2997,23 @@ function applyMatchedChoicesToState(matchedChoices) {
   const customH = State.choiceLayout.height || 55;
   const customGap = State.choiceLayout.gap !== undefined ? State.choiceLayout.gap : 20;
 
+  // Tüm şıkların sol kenarını dikeyde tek bir düz hizaya (min X) eşitle:
+  const rawXs = matchedChoices.map(item => Math.round(nw * (Math.max(1, Math.min(95, item.x_percent || 10)) / 100)));
+  const commonAlignedX = Math.min(...rawXs);
+  const commonAlignedW = Math.min(nw - commonAlignedX, customW);
+
   const newAnnotations = matchedChoices.map((item, idx) => {
     const letter = (item.letter || String.fromCharCode(65 + idx)).toUpperCase();
     const isCorrect = item.type === 'correct';
     const ts = Math.max(0, parseFloat(item.timestamp) || 0);
 
-    const boxX = Math.round(nw * (Math.max(1, Math.min(95, item.x_percent || 10)) / 100));
+    const boxX = commonAlignedX;
     const autoY = Math.round(nh * 0.44 + idx * (customH + customGap));
     const boxY = (item.y_percent && item.y_percent > 15)
       ? Math.round(nh * (item.y_percent / 100))
       : autoY;
 
-    const boxW = Math.min(nw - boxX, customW);
+    const boxW = commonAlignedW;
     const boxH = Math.min(nh - boxY, customH);
 
     return {
@@ -2471,6 +3052,7 @@ function applyMatchedChoicesToState(matchedChoices) {
 
   updateSmartAssistantUI();
   renderAnnotationsList();
+  renderTimeline();
   renderCanvas();
   updateStepIndicator();
   updateRenderButtonState();
@@ -2574,6 +3156,24 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
     }
 
     // Şıkları düzenleme modunda çiz
+    const validEditChoices = choiceAnns.filter(a => a.box && a.box.width > 5);
+    const commonColumnLeftX = validEditChoices.length > 0 ? Math.min(...validEditChoices.map(c => c.box.x * scale)) : null;
+
+    // Dikey Sütun Hizalama Rehber Çizgisi (Kullanıcı hizalamayı net görsün diye hafif rehber çizgi)
+    if (commonColumnLeftX !== null && validEditChoices.length > 1) {
+      targetCtx.save();
+      targetCtx.strokeStyle = 'rgba(56, 189, 248, 0.30)'; // Cyan rehber çizgi
+      targetCtx.lineWidth = Math.max(1, 1.2 * scale);
+      targetCtx.setLineDash([4 * scale, 4 * scale]);
+      const minY = Math.min(...validEditChoices.map(c => c.box.y * scale));
+      const maxY = Math.max(...validEditChoices.map(c => (c.box.y + c.box.height) * scale));
+      targetCtx.beginPath();
+      targetCtx.moveTo(commonColumnLeftX, minY - 8 * scale);
+      targetCtx.lineTo(commonColumnLeftX, maxY + 8 * scale);
+      targetCtx.stroke();
+      targetCtx.restore();
+    }
+
     for (const ann of choiceAnns) {
       const bx = ann.box.x * scale;
       const by = ann.box.y * scale;
@@ -2585,7 +3185,7 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
       } else if (ann.type === 'wrong') {
         // Yanlış şık: Çerçeve çizgisi hafif kesikli rehber olarak gösterilir, solunda kırmızı ✕ yer alır
         drawChoiceEditBox(targetCtx, bx, by, bw, bh, scale, ann, 'wrong');
-        drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, 1.0);
+        drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, 1.0, commonColumnLeftX);
         drawChoiceTag(targetCtx, bx, by, scale, ann);
       } else {
         // Doğru şık: Yeşil kutu ve sağında [✓] Doğru cevap rozeti
@@ -2663,6 +3263,9 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
         targetCtx.fillRect(0, 0, canvasW, canvasH);
         targetCtx.restore();
 
+        // Bütün şıkların ortak sol hizası (Tüm ✕ rozetlerini kusursuz dikey sütun çizgisine kilitler)
+        const commonColumnLeftX = validChoices.length > 0 ? Math.min(...validChoices.map(c => c.box.x * scale)) : null;
+
         for (let i = 0; i < validChoices.length; i++) {
           const choice = validChoices[i];
           const start = Math.max(0, parseFloat(choice.timestamp) || 0);
@@ -2715,8 +3318,8 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
             const verdictProgress = isPast ? 1.0 : Math.min(1.0, verdictElapsed / 0.35);
 
             if (choice.type === 'wrong') {
-              // Referans 2 & 3: Yanlış şıklarda KUTU YOK! Sadece solunda kırmızı dairesel ✕ rozeti var
-              drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, verdictProgress);
+              // Referans 2 & 3: Yanlış şıklarda KUTU YOK! Sadece solunda dikey hizalı kırmızı dairesel ✕ rozeti var
+              drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, verdictProgress, commonColumnLeftX);
             } else {
               // Referans 3: Doğru şıkta yeşil parlayan kutu + sağında [✓] Doğru cevap rozeti
               drawCorrectChoiceBox(targetCtx, bx, by, bw, bh, scale, 1.0, 1.0);
@@ -2852,10 +3455,12 @@ function drawChoiceEditBox(targetCtx, bx, by, bw, bh, scale, ann, type) {
 
 /**
  * Referans 2 & 3: Yanlış Şık Kırmızı Dairesel Çarpı Rozeti (Sadece Sol Tarafta)
+ * columnLeftX parametresi ile tüm şıkların ✕ rozetleri jilet gibi tek bir dikey sütun çizgisine kilitlenir.
  */
-function drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, animProgress = 1.0) {
+function drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, animProgress = 1.0, columnLeftX = null) {
   const R = Math.max(12, Math.min(22, bh * 0.42));
-  let cx = bx - R - 3.5 * scale;
+  const baseLeft = (columnLeftX !== null && columnLeftX !== undefined) ? columnLeftX : bx;
+  let cx = baseLeft - R - 3.5 * scale;
   let cy = by + bh / 2;
   if (cx - R < 4) {
     cx = R + 4;
@@ -4588,4 +5193,5 @@ function formatTime(sec) {
 window.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   initWaveSurfer();
+  setupTimelineInteractions();
 });
