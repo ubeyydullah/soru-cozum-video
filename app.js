@@ -1539,7 +1539,8 @@ function updateSmartAssistantUI() {
       DOM.targetChoiceLetter.className = 'font-bold font-mono text-xs text-zinc-950 bg-emerald-400 px-2 py-0.5 rounded shadow-sm animate-pulse';
     }
     if (DOM.smartAssistantStatus) {
-      DOM.smartAssistantStatus.innerHTML = `🎯 Sıradaki: <strong class="text-white bg-emerald-500/30 px-1.5 py-0.5 rounded font-mono">${curTarget.choiceLetter} Şıkkı</strong> — Dinlerken yanlışsa <strong class="text-rose-400">[X]</strong>, doğruysa <strong class="text-emerald-400">[M]</strong> basın. (${choices.length - pending.length}/${choices.length} tamamlandı)`;
+      const eHint = curTarget.choiceLetter === 'E' ? ' <span class="text-amber-300 font-semibold">(veya "Dolayısıyla" ifadesi)</span>' : '';
+      DOM.smartAssistantStatus.innerHTML = `🎯 Sıradaki: <strong class="text-white bg-emerald-500/30 px-1.5 py-0.5 rounded font-mono">${curTarget.choiceLetter} Şıkkı</strong>${eHint} — Dinlerken yanlışsa <strong class="text-rose-400">[X]</strong>, doğruysa <strong class="text-emerald-400">[M]</strong> basın. (${choices.length - pending.length}/${choices.length} tamamlandı)`;
     }
   } else {
     if (DOM.targetChoiceBadge) {
@@ -2013,7 +2014,8 @@ EŞLEME KURALLARI:
 1. Öğretmenin elediği / yanlış dediği şıklar için: "type": "wrong".
 2. Öğretmenin doğru dediği / cevabı ilan ettiği şık için: "type": "correct".
 3. timestamp değerini öğretmenin o şıktan bahsettiği saniye (ondalıklı sayı, örn: 3.4) olarak ata.
-4. Eğer bir şıktan hiç bahsedilmediyse timestamp: 0 ver.
+4. ÖNEMLİ E ŞIKKI TETİKLEYİCİSİ: Öğretmen son şık olan E şıkkı için doğrudan "E şıkkı" demeyebilir. Transkriptte geçen "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") kelimesi E şıkkının başlangıç tetikleyicisidir. "Dolayısıyla" kelimesinin söylendiği saniyeyi E şıkkının timestamp'i olarak ata ve bu şıkkı "type": "correct" olarak belirle!
+5. Eğer bir şıktan hiç bahsedilmediyse timestamp: 0 ver.
 
 ÇIKTI FORMATI:
 SADECE ve SADECE aşağıdaki gibi bir JSON array döndür. Başında veya sonunda markdown backtick (\`\`\`json) veya açıklama metni YAZMA:
@@ -2117,13 +2119,14 @@ Aşağıdaki ses transkriptine bakarak öğretmenin elediği ve doğru bulduğu 
 SES TRANSKRİPTİ:
 ${transcriptText}
 
-GÖREV:
-A, B, C, D (varsa E) şıklarını dikey standart sırasına göre yerleştirerek şu formatta bir JSON array döndür:
+GÖREV VE ÖNEMLİ KURALLAR:
+1. A, B, C, D ve E şıklarını zaman damgalarıyla çıkar.
+2. ÖNEMLİ: Son şık olan E için öğretmen "E şıkkı" demeyebilir. Transkriptte "Dolayısıyla" (veya "dolayısıyla", "dolayisiyla") ifadesinin geçtiği an E şıkkının başlangıç zamanıdır (timestamp). "Dolayısıyla" kelimesinin saniyesini E şıkkının timestamp'i olarak ata ve type: "correct" yap.
+3. A, B, C, D (varsa E) şıklarını dikey standart sırasına göre yerleştirerek şu formatta bir JSON array döndür:
 [
   { "letter": "A", "type": "wrong", "timestamp": 2.1, "x_percent": 12, "y_percent": 48, "width_percent": 45, "height_percent": 6 },
   { "letter": "B", "type": "wrong", "timestamp": 4.5, "x_percent": 12, "y_percent": 56, "width_percent": 45, "height_percent": 6 },
-  { "letter": "C", "type": "correct", "timestamp": 7.2, "x_percent": 12, "y_percent": 64, "width_percent": 45, "height_percent": 6 },
-  { "letter": "D", "type": "wrong", "timestamp": 0, "x_percent": 12, "y_percent": 72, "width_percent": 45, "height_percent": 6 }
+  { "letter": "E", "type": "correct", "timestamp": 12.8, "x_percent": 12, "y_percent": 76, "width_percent": 45, "height_percent": 6 }
 ]
 SADECE JSON array döndür, markdown yazma:`;
 
@@ -2352,11 +2355,19 @@ function extractChoicesLocallyFromTranscript(transcript) {
       const matchTime = line.match(/\[([0-9.]+)s/);
       const ts = matchTime ? parseFloat(matchTime[1]) : 0;
       const lower = line.toLowerCase();
-      const hasLetter = new RegExp(`\\b${letter.toLowerCase()}\\b|${letter.toLowerCase()}\\s*şık|${letter.toLowerCase()}\\s*seçenek`, 'i').test(line);
+      let hasLetter = new RegExp(`\\b${letter.toLowerCase()}\\b|${letter.toLowerCase()}\\s*şık|${letter.toLowerCase()}\\s*seçenek`, 'i').test(line);
+
+      // E şıkkı için özel tetikleyici: "Dolayısıyla"
+      if (letter === 'E' && !hasLetter) {
+        hasLetter = /dolayısıyla|dolayisiyla|dolayisiyle/i.test(line);
+      }
 
       if (hasLetter) {
         foundTs = ts;
-        if (lower.includes('doğru') || lower.includes('cevap') || lower.includes('cevabımız') || lower.includes('olur')) {
+        // Eğer E şıkkı "Dolayısıyla" ile tetiklendiyse veya metinde doğru/cevap geçiyorsa doğru şık olarak kabul edilir
+        if (letter === 'E' && /dolayısıyla|dolayisiyla|dolayisiyle/i.test(line)) {
+          foundType = 'correct';
+        } else if (lower.includes('doğru') || lower.includes('cevap') || lower.includes('cevabımız') || lower.includes('olur')) {
           foundType = 'correct';
         } else {
           foundType = 'wrong';
@@ -2776,10 +2787,10 @@ function drawChoiceEditBox(targetCtx, bx, by, bw, bh, scale, ann, type) {
  */
 function drawWrongChoiceCrossBadge(targetCtx, bx, by, bw, bh, scale, animProgress = 1.0) {
   const R = Math.max(12, Math.min(22, bh * 0.42));
-  let cx = bx - R - 12 * scale;
+  let cx = bx - R - 3.5 * scale;
   let cy = by + bh / 2;
-  if (cx - R < 6) {
-    cx = R + 6;
+  if (cx - R < 4) {
+    cx = R + 4;
   }
 
   const badgeScale = easeOutBack(Math.max(0.01, Math.min(1.0, animProgress)));
@@ -3153,17 +3164,17 @@ function drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, i
   const pos = ann.crossmark?.position || 'left';
   let cx, cy;
   if (pos === 'left') {
-    cx = bx - R - 12 * scale;
+    cx = bx - R - 3.5 * scale;
     cy = by + bh / 2;
     // Eğer görselin sol kenarından taşarsa kutunun içine/soluna güvenli yerleştir
     if (cx - R < 4) {
-      cx = bx + R + 6 * scale;
+      cx = bx + R + 4 * scale;
     }
   } else if (pos === 'right') {
-    cx = bx + bw + R + 12 * scale;
+    cx = bx + bw + R + 3.5 * scale;
     cy = by + bh / 2;
   } else {
-    cx = bx - R - 12 * scale;
+    cx = bx - R - 3.5 * scale;
     cy = by + bh / 2;
   }
 

@@ -187,6 +187,87 @@
         </div>
       </div>
 
+      <!-- Dalga Formu & Ses Çubuğu (WaveSurfer - Doğrudan Video Panelinin Altında) -->
+      <div id="audio-playback-panel" class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
+        
+        <!-- Oynatıcı Kontrolleri & Zaman Damgası Butonu -->
+        <div class="flex items-center justify-between gap-4">
+          <div class="flex items-center gap-2">
+            <!-- Play/Pause Butonu -->
+            <button id="btn-audio-play" class="w-10 h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 flex items-center justify-center transition-all shadow-md shadow-emerald-950 active:scale-95 disabled:opacity-50 disabled:pointer-events-none" disabled>
+              <i data-lucide="play" id="icon-play" class="w-5 h-5 ml-0.5 fill-current"></i>
+            </button>
+
+            <!-- Geri / İleri Atlama -->
+            <button id="btn-audio-back" class="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors" title="2 sn Geri">
+              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-audio-forward" class="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors" title="2 sn İleri">
+              <i data-lucide="rotate-cw" class="w-4 h-4"></i>
+            </button>
+
+            <!-- Süre Sayaçları -->
+            <div class="font-mono text-xs text-zinc-300 ml-2 bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800/80">
+              <span id="audio-current-time" class="text-emerald-400 font-bold">00:00.00</span>
+              <span class="text-zinc-600">/</span>
+              <span id="audio-total-time" class="text-zinc-400">00:00.00</span>
+            </div>
+          </div>
+
+          <!-- KRİTİK BUTONLAR: Doğru ve Yanlış Şık Zamanı -->
+          <div class="flex items-center gap-2">
+            <!-- Canlı Hedef Şık Göstergesi -->
+            <div id="target-choice-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-950 border border-emerald-500/50 shadow-inner">
+              <span class="text-[11px] text-zinc-400">Hedef:</span>
+              <span id="target-choice-letter" class="font-bold font-mono text-xs text-zinc-950 bg-emerald-400 px-2 py-0.5 rounded shadow-sm">A Şıkkı</span>
+              <span class="text-[10px] text-zinc-500 font-mono">([X] Ele / [M] Doğru)</span>
+            </div>
+
+            <!-- Doğru Şıkkı İşaretle -->
+            <button id="btn-mark-timestamp" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 shadow-md shadow-emerald-950 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Doğru cevabın açıklandığı anı kaydeder">
+              <i data-lucide="check-circle" class="w-4 h-4 fill-current"></i>
+              <span>Doğru (✓) İşaretle</span>
+              <kbd class="ml-1 bg-zinc-900/80 text-emerald-300 px-1 py-0.5 rounded text-[10px] font-mono">M</kbd>
+            </button>
+
+            <!-- Yanlış Şıkkı / Elemeyi İşaretle -->
+            <button id="btn-mark-wrong" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Yanlış seçeneğin elendiği anı kaydeder">
+              <i data-lucide="x-circle" class="w-4 h-4 text-rose-400"></i>
+              <span>Yanlış (✕) Ele</span>
+              <kbd class="ml-1 bg-zinc-900 text-rose-300 px-1 py-0.5 rounded text-[10px] font-mono">X</kbd>
+            </button>
+
+            <!-- Vurguları Test Et -->
+            <button id="btn-preview-highlight" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 transition-all disabled:opacity-40" disabled title="İlk vurgudan 1.5 saniye önce başlatır">
+              <i data-lucide="eye" class="w-4 h-4 text-emerald-400"></i>
+              <span>Önizle</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- WaveSurfer Dalga Formu Taşıyıcısı -->
+        <div class="relative bg-zinc-950 rounded-xl p-2.5 border border-zinc-800/70">
+          <div id="audio-empty-notice" class="py-6 text-center text-xs text-zinc-500 flex flex-col items-center justify-center gap-2">
+            <i data-lucide="music" class="w-5 h-5 text-zinc-600"></i>
+            <span>Ses dosyası yüklendiğinde interaktif dalga formu (waveform) burada belirecektir.</span>
+          </div>
+          <div id="waveform-container" class="hidden w-full h-16"></div>
+          <div id="waveform-timeline" class="hidden w-full"></div>
+        </div>
+
+        <!-- İşaretlenen Zaman Damgası Özeti -->
+        <div class="flex items-center justify-between text-xs px-1">
+          <div class="flex items-center gap-2">
+            <span class="text-zinc-400 font-medium">Vurgunun Başlangıç Zamanı:</span>
+            <span id="badge-marked-time" class="px-2.5 py-0.5 rounded-md font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Henüz Belirlenmedi</span>
+          </div>
+          <div class="text-[11px] text-zinc-500">
+            İpucu: Sesi dinlerken cevabı söylediğiniz anda <strong class="text-emerald-400">M</strong> tuşuna basarak tam saniyeyi kaydedin.
+          </div>
+        </div>
+
+      </div>
+
       <!-- Akıllı Şık Asistanı (AI Otomatik Eşleme & Manuel Can Simidi) -->
       <div id="smart-choice-assistant" class="bg-gradient-to-r from-zinc-900 via-zinc-900/90 to-zinc-900 border border-violet-500/30 rounded-2xl p-3 flex flex-col gap-2.5 shadow-lg">
         <div class="flex flex-col md:flex-row items-center justify-between gap-3">
@@ -320,87 +401,6 @@
             <span>+ Yeni Vurgu Ekle</span>
           </button>
         </div>
-      </div>
-
-      <!-- Dalga Formu & Ses Çubuğu (WaveSurfer) -->
-      <div class="bg-zinc-900/90 border border-zinc-800/80 rounded-2xl p-4 flex flex-col gap-3 shadow-lg">
-        
-        <!-- Oynatıcı Kontrolleri & Zaman Damgası Butonu -->
-        <div class="flex items-center justify-between gap-4">
-          <div class="flex items-center gap-2">
-            <!-- Play/Pause Butonu -->
-            <button id="btn-audio-play" class="w-10 h-10 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 flex items-center justify-center transition-all shadow-md shadow-emerald-950 active:scale-95 disabled:opacity-50 disabled:pointer-events-none" disabled>
-              <i data-lucide="play" id="icon-play" class="w-5 h-5 ml-0.5 fill-current"></i>
-            </button>
-
-            <!-- Geri / İleri Atlama -->
-            <button id="btn-audio-back" class="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors" title="2 sn Geri">
-              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
-            </button>
-            <button id="btn-audio-forward" class="p-2 text-zinc-400 hover:text-white rounded-lg hover:bg-zinc-800 transition-colors" title="2 sn İleri">
-              <i data-lucide="rotate-cw" class="w-4 h-4"></i>
-            </button>
-
-            <!-- Süre Sayaçları -->
-            <div class="font-mono text-xs text-zinc-300 ml-2 bg-zinc-950 px-3 py-1.5 rounded-lg border border-zinc-800/80">
-              <span id="audio-current-time" class="text-emerald-400 font-bold">00:00.00</span>
-              <span class="text-zinc-600">/</span>
-              <span id="audio-total-time" class="text-zinc-400">00:00.00</span>
-            </div>
-          </div>
-
-          <!-- KRİTİK BUTONLAR: Doğru ve Yanlış Şık Zamanı -->
-          <div class="flex items-center gap-2">
-            <!-- Canlı Hedef Şık Göstergesi -->
-            <div id="target-choice-badge" class="hidden items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-950 border border-emerald-500/50 shadow-inner">
-              <span class="text-[11px] text-zinc-400">Hedef:</span>
-              <span id="target-choice-letter" class="font-bold font-mono text-xs text-zinc-950 bg-emerald-400 px-2 py-0.5 rounded shadow-sm">A Şıkkı</span>
-              <span class="text-[10px] text-zinc-500 font-mono">([X] Ele / [M] Doğru)</span>
-            </div>
-
-            <!-- Doğru Şıkkı İşaretle -->
-            <button id="btn-mark-timestamp" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-zinc-950 shadow-md shadow-emerald-950 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Doğru cevabın açıklandığı anı kaydeder">
-              <i data-lucide="check-circle" class="w-4 h-4 fill-current"></i>
-              <span>Doğru (✓) İşaretle</span>
-              <kbd class="ml-1 bg-zinc-900/80 text-emerald-300 px-1 py-0.5 rounded text-[10px] font-mono">M</kbd>
-            </button>
-
-            <!-- Yanlış Şıkkı / Elemeyi İşaretle -->
-            <button id="btn-mark-wrong" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="Yanlış seçeneğin elendiği anı kaydeder">
-              <i data-lucide="x-circle" class="w-4 h-4 text-rose-400"></i>
-              <span>Yanlış (✕) Ele</span>
-              <kbd class="ml-1 bg-zinc-900 text-rose-300 px-1 py-0.5 rounded text-[10px] font-mono">X</kbd>
-            </button>
-
-            <!-- Vurguları Test Et -->
-            <button id="btn-preview-highlight" class="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700/60 transition-all disabled:opacity-40" disabled title="İlk vurgudan 1.5 saniye önce başlatır">
-              <i data-lucide="eye" class="w-4 h-4 text-emerald-400"></i>
-              <span>Önizle</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- WaveSurfer Dalga Formu Taşıyıcısı -->
-        <div class="relative bg-zinc-950 rounded-xl p-2.5 border border-zinc-800/70">
-          <div id="audio-empty-notice" class="py-6 text-center text-xs text-zinc-500 flex flex-col items-center justify-center gap-2">
-            <i data-lucide="music" class="w-5 h-5 text-zinc-600"></i>
-            <span>Ses dosyası yüklendiğinde interaktif dalga formu (waveform) burada belirecektir.</span>
-          </div>
-          <div id="waveform-container" class="hidden w-full h-16"></div>
-          <div id="waveform-timeline" class="hidden w-full"></div>
-        </div>
-
-        <!-- İşaretlenen Zaman Damgası Özeti -->
-        <div class="flex items-center justify-between text-xs px-1">
-          <div class="flex items-center gap-2">
-            <span class="text-zinc-400 font-medium">Vurgunun Başlangıç Zamanı:</span>
-            <span id="badge-marked-time" class="px-2.5 py-0.5 rounded-md font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Henüz Belirlenmedi</span>
-          </div>
-          <div class="text-[11px] text-zinc-500">
-            İpucu: Sesi dinlerken cevabı söylediğiniz anda <strong class="text-emerald-400">M</strong> tuşuna basarak tam saniyeyi kaydedin.
-          </div>
-        </div>
-
       </div>
 
     </div>
