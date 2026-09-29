@@ -20,11 +20,11 @@ const State = {
     duration: 0,
     buffer: null,
   },
-  // Çoklu Vurgu Listesi (Doğru, Yanlış Şıklar ve Fosforlu Alt Çizgiler)
+  // Çoklu Vurgu Listesi (Doğru ve Yanlış Şıklar)
   annotations: [], // Array of { id, label, type, shape, box: {x,y,width,height}, timestamp, color, opacity, borderWidth, borderRadius, glow, animType, animDuration, checkmark, crossmark }
   activeAnnotationId: null,
   currentToolType: 'correct', // 'correct' | 'wrong'
-  currentShape: 'rect', // 'rect' | 'ellipse' | 'underline'
+  currentShape: 'rect', // 'rect' | 'ellipse'
 
   // İzlenme Oranını Artıran İlerleme Çubuğu (Retention Bar)
   retentionBar: {
@@ -43,7 +43,7 @@ const State = {
     active: false,
   },
   highlight: {
-    shape: 'rect', // 'rect' | 'ellipse' | 'underline'
+    shape: 'rect', // 'rect' | 'ellipse'
     color: '#22c55e',
     opacity: 0.30,
     borderWidth: 4,
@@ -101,19 +101,13 @@ const DOM = {
   toolTypeWrong: document.getElementById('tool-type-wrong'),
   toolShapeRect: document.getElementById('tool-shape-rect'),
   toolShapeEllipse: document.getElementById('tool-shape-ellipse'),
-  toolShapeUnderline: document.getElementById('tool-shape-underline'),
   btnClearBox: document.getElementById('btn-clear-box'),
   annotationsBar: document.getElementById('annotations-bar'),
   annotationsList: document.getElementById('annotations-list'),
   btnAddAnnotation: document.getElementById('btn-add-annotation'),
 
   // Smart Choice Assistant
-  btnAutoChoices5: document.getElementById('btn-auto-choices-5'),
-  btnAutoChoices4: document.getElementById('btn-auto-choices-4'),
-  btnDetectPixelChoices: document.getElementById('btn-detect-pixel-choices'),
   btnClickWrap: document.getElementById('btn-click-wrap'),
-  cfgChoiceWidth: document.getElementById('cfg-choice-width'),
-  cfgChoiceAlign: document.getElementById('cfg-choice-align'),
   smartAssistantStatus: document.getElementById('smart-assistant-status'),
   targetChoiceBadge: document.getElementById('target-choice-badge'),
   targetChoiceLetter: document.getElementById('target-choice-letter'),
@@ -586,7 +580,6 @@ function renderAnnotationsList() {
 
     let iconHtml = '🟢';
     if (ann.isPending) iconHtml = '⏳';
-    else if (ann.shape === 'underline') iconHtml = '🟡 🖊️';
     else if (ann.type === 'wrong') iconHtml = '🔴 ✕';
     else iconHtml = '🟢 ✓';
 
@@ -656,18 +649,13 @@ function updateToolTypeButtonsUI(type) {
 function updateToolShapeButtonsUI(shape) {
   const btns = [
     { el: DOM.toolShapeRect, shape: 'rect' },
-    { el: DOM.toolShapeEllipse, shape: 'ellipse' },
-    { el: DOM.toolShapeUnderline, shape: 'underline' }
+    { el: DOM.toolShapeEllipse, shape: 'ellipse' }
   ];
 
   btns.forEach(b => {
     if (!b.el) return;
     if (b.shape === shape) {
-      if (shape === 'underline') {
-        b.el.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-amber-500 text-zinc-950 shadow-sm flex items-center gap-1.5 transition-all';
-      } else {
-        b.el.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
-      }
+      b.el.className = 'px-2.5 py-1 rounded text-xs font-semibold bg-emerald-500 text-white shadow-sm flex items-center gap-1.5 transition-all';
     } else {
       b.el.className = 'px-2.5 py-1 rounded text-xs font-medium text-zinc-400 hover:text-white flex items-center gap-1.5 transition-all';
     }
@@ -682,13 +670,11 @@ function setToolType(type) {
   if (ann) {
     ann.type = type;
     ann.label = type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
-    if (ann.shape !== 'underline') {
-      ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
-      ann.checkmark.enabled = (type === 'correct');
-      ann.crossmark.enabled = (type === 'wrong');
-      DOM.cfgColorFill.value = ann.color;
-      DOM.textColorFill.textContent = ann.color.toUpperCase();
-    }
+    ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
+    ann.checkmark.enabled = (type === 'correct');
+    ann.crossmark.enabled = (type === 'wrong');
+    DOM.cfgColorFill.value = ann.color;
+    DOM.textColorFill.textContent = ann.color.toUpperCase();
     renderAnnotationsList();
     renderCanvas();
     updateFfmpegCommand();
@@ -702,24 +688,8 @@ function setToolShape(shape) {
   const ann = getActiveAnnotation();
   if (ann) {
     ann.shape = shape;
-    if (shape === 'underline') {
-      ann.label = 'Fosforlu Çizgi';
-      ann.color = '#facc15';
-      ann.opacity = 0.55;
-      ann.borderWidth = 0;
-      DOM.cfgColorFill.value = ann.color;
-      DOM.textColorFill.textContent = ann.color.toUpperCase();
-      DOM.cfgOpacity.value = 55;
-      DOM.textOpacity.textContent = '%55';
-    } else {
-      ann.label = ann.type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
-      if (ann.borderWidth === 0) ann.borderWidth = 4;
-      if (ann.color === '#facc15') {
-        ann.color = ann.type === 'correct' ? '#22c55e' : '#ef4444';
-        DOM.cfgColorFill.value = ann.color;
-        DOM.textColorFill.textContent = ann.color.toUpperCase();
-      }
-    }
+    ann.label = ann.type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
+    if (ann.borderWidth === 0) ann.borderWidth = 4;
     renderAnnotationsList();
     renderCanvas();
     updateFfmpegCommand();
@@ -737,9 +707,6 @@ if (DOM.toolShapeRect) {
 }
 if (DOM.toolShapeEllipse) {
   DOM.toolShapeEllipse.addEventListener('click', () => setToolShape('ellipse'));
-}
-if (DOM.toolShapeUnderline) {
-  DOM.toolShapeUnderline.addEventListener('click', () => setToolShape('underline'));
 }
 
 // ------------------------------------------
@@ -898,10 +865,9 @@ window.addEventListener('mouseup', () => {
     } else {
       // Geçerli bir kutu çizildi -> Yeni Vurgu Olarak Ekle!
       const isCorrect = State.currentToolType === 'correct';
-      const isUnderline = State.currentShape === 'underline';
-      const defaultColor = isUnderline ? '#facc15' : (isCorrect ? State.highlight.color : '#ef4444');
-      const defaultOpacity = isUnderline ? 0.55 : State.highlight.opacity;
-      const defaultBorder = isUnderline ? 0 : State.highlight.borderWidth;
+      const defaultColor = isCorrect ? State.highlight.color : '#ef4444';
+      const defaultOpacity = State.highlight.opacity;
+      const defaultBorder = State.highlight.borderWidth;
       const defaultRadius = State.highlight.borderRadius || 16;
       const defaultGlow = State.highlight.glow !== undefined ? State.highlight.glow : true;
       const defaultAnimType = State.highlight.animType || 'scale_glow';
@@ -910,7 +876,7 @@ window.addEventListener('mouseup', () => {
 
       const newAnn = {
         id: 'ann_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
-        label: isUnderline ? 'Fosforlu Çizgi' : (isCorrect ? 'Doğru (✓)' : 'Yanlış (✕)'),
+        label: isCorrect ? 'Doğru (✓)' : 'Yanlış (✕)',
         type: State.currentToolType,
         shape: State.currentShape,
         box: {
@@ -933,7 +899,7 @@ window.addEventListener('mouseup', () => {
           style: State.checkmark.style || 'badge',
         },
         crossmark: {
-          enabled: !isCorrect && !isUnderline,
+          enabled: !isCorrect,
           position: 'right',
           style: 'badge',
         }
@@ -1528,23 +1494,8 @@ function updateSmartAssistantUI() {
 }
 
 // Akıllı Şık Butonları Dinleyicileri
-if (DOM.btnAutoChoices5) {
-  DOM.btnAutoChoices5.addEventListener('click', () => applyChoiceTemplate(5));
-}
-if (DOM.btnAutoChoices4) {
-  DOM.btnAutoChoices4.addEventListener('click', () => applyChoiceTemplate(4));
-}
-if (DOM.btnDetectPixelChoices) {
-  DOM.btnDetectPixelChoices.addEventListener('click', () => detectQuestionChoices(5));
-}
 if (DOM.btnClickWrap) {
   DOM.btnClickWrap.addEventListener('click', () => toggleClickWrapMode());
-}
-if (DOM.cfgChoiceWidth) {
-  DOM.cfgChoiceWidth.addEventListener('change', updateChoicesLayout);
-}
-if (DOM.cfgChoiceAlign) {
-  DOM.cfgChoiceAlign.addEventListener('change', updateChoicesLayout);
 }
 
 // ==========================================
@@ -1620,19 +1571,14 @@ function drawFrame(targetCtx, currentTime, isExporting = false) {
       continue;
     }
 
-    if (ann.shape === 'underline') {
-      // 5. Fosforlu Kalem / Altını Çizme Animasyonu
-      drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
-    } else {
-      // Dikdörtgen veya Elips Vurgu
-      drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+    // Dikdörtgen veya Elips Vurgu
+    drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
 
-      // Onay veya Çarpı İkonu Rozeti
-      if (ann.type === 'correct' && ann.checkmark?.enabled) {
-        drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
-      } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
-        drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
-      }
+    // Onay veya Çarpı İkonu Rozeti
+    if (ann.type === 'correct' && ann.checkmark?.enabled) {
+      drawAnimatedCheckmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
+    } else if (ann.type === 'wrong' && ann.crossmark?.enabled) {
+      drawAnimatedCrossmark(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann);
     }
 
     // Düzenleme modunda şık harfi rozetini sol üstte göster
@@ -1821,52 +1767,6 @@ function drawShapeHighlight(targetCtx, bx, by, bw, bh, scale, animProgress, isEd
   }
 }
 
-/**
- * Fosforlu Kalem / El Yazısı Çizgisi (Handwritten Underline)
- * Metnin tabanı boyunca soldan sağa gerçek bir fosforlu kalem gibi akar.
- */
-function drawHighlighterUnderline(targetCtx, bx, by, bw, bh, scale, animProgress, isEditMode, ann) {
-  const hex = ann.color || '#facc15';
-  const r = parseInt(hex.slice(1, 3), 16) || 250;
-  const g = parseInt(hex.slice(3, 5), 16) || 204;
-  const b = parseInt(hex.slice(5, 7), 16) || 21;
-  const alpha = ann.opacity || 0.55;
-
-  const lineH = Math.max(8 * scale, Math.min(bh * 0.45, 20 * scale));
-  const lineY = by + bh - lineH * 0.5 - 2 * scale;
-  const startX = bx;
-  const totalW = bw;
-
-  const sweep = isEditMode ? 1.0 : easeOutQuad(animProgress);
-  const currentW = totalW * sweep;
-  if (currentW <= 1) return;
-
-  targetCtx.save();
-  targetCtx.beginPath();
-  targetCtx.lineCap = 'round';
-  targetCtx.lineWidth = lineH;
-  targetCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-
-  if (ann.glow) {
-    targetCtx.shadowColor = hex;
-    targetCtx.shadowBlur = 4 * scale;
-  }
-
-  targetCtx.moveTo(startX + lineH * 0.4, lineY);
-  targetCtx.lineTo(Math.max(startX + lineH * 0.4, startX + currentW - lineH * 0.4), lineY);
-  targetCtx.stroke();
-
-  // Kalem ucu parıltısı (animasyon akarken)
-  if (!isEditMode && animProgress < 0.98) {
-    targetCtx.fillStyle = '#ffffff';
-    targetCtx.beginPath();
-    targetCtx.arc(startX + currentW - lineH * 0.4, lineY, lineH * 0.35, 0, 2 * Math.PI);
-    targetCtx.shadowColor = '#ffffff';
-    targetCtx.shadowBlur = 4 * scale;
-    targetCtx.fill();
-  }
-  targetCtx.restore();
-}
 
 /**
  * Doğru Seçenek için Animasyonlu Onay İşareti (✓) Rozeti
@@ -2136,15 +2036,13 @@ function setTimestamp(seconds, type = null) {
       if (ann.isChoice) {
         ann.label = `${ann.choiceLetter} Şıkkı (${type === 'correct' ? '✓ Doğru' : '✕ Yanlış'})`;
       } else {
-        ann.label = type === 'correct' ? 'Doğru (✓)' : (ann.shape === 'underline' ? 'Fosforlu Çizgi' : 'Yanlış (✕)');
+        ann.label = type === 'correct' ? 'Doğru (✓)' : 'Yanlış (✕)';
       }
-      if (ann.shape !== 'underline') {
-        ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
-        ann.checkmark.enabled = (type === 'correct');
-        ann.crossmark.enabled = (type === 'wrong');
-        DOM.cfgColorFill.value = ann.color;
-        DOM.textColorFill.textContent = ann.color.toUpperCase();
-      }
+      ann.color = type === 'correct' ? '#22c55e' : '#ef4444';
+      ann.checkmark.enabled = (type === 'correct');
+      ann.crossmark.enabled = (type === 'wrong');
+      DOM.cfgColorFill.value = ann.color;
+      DOM.textColorFill.textContent = ann.color.toUpperCase();
     }
 
     if (ann.isChoice) {
@@ -2536,8 +2434,6 @@ window.addEventListener('keydown', (e) => {
     setToolType('correct');
   } else if (e.key === '2') {
     setToolType('wrong');
-  } else if (e.key === '3') {
-    setToolShape('underline');
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
     if (State.activeAnnotationId) {
       e.preventDefault();
@@ -3034,11 +2930,6 @@ function updateFfmpegCommand() {
     const ts = (ann.timestamp || 0).toFixed(2);
     const hex = (ann.color || '#22c55e').replace('#', '0x');
 
-    if (ann.shape === 'underline') {
-      const lineH = Math.max(8, Math.round(bh * 0.35));
-      const lineY = Math.round(by + bh - lineH);
-      return `drawbox=x=${bx}:y=${lineY}:w=${bw}:h=${lineH}:color=${hex}@0.6:t=fill:enable='gte(t,${ts})'`;
-    }
     return `drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}@0.35:t=fill:enable='gte(t,${ts})',drawbox=x=${bx}:y=${by}:w=${bw}:h=${bh}:color=${hex}:t=4:enable='gte(t,${ts})'`;
   }).join(',');
 
@@ -3137,29 +3028,11 @@ DOM.btnLoadDemo.addEventListener('click', () => {
     const imgFile = new File([imgBlob], 'ornek_geometri_sorusu.png', { type: 'image/png' });
     handleImageUpload(imgFile);
 
-    // 3 Farklı Vurguyu Otomatik Ekle:
-    // 1. Fosforlu Sarı Alt Çizgi (Soru öncülü) -> 0.80 saniye
-    // 2. Yanlış Şıkkı Eleme (A Şıkkı Kırmızı + ✕) -> 2.20 saniye
-    // 3. Doğru Şıkkı Vurgulama (C Şıkkı Yeşil + ✓) -> 3.80 saniye
+    // 2 Farklı Vurguyu Otomatik Ekle:
+    // 1. Yanlış Şıkkı Eleme (A Şıkkı Kırmızı + ✕) -> 1.80 saniye
+    // 2. Doğru Şıkkı Vurgulama (C Şıkkı Yeşil + ✓) -> 3.60 saniye
     setTimeout(() => {
       State.annotations = [
-        {
-          id: 'demo_ann_1',
-          label: 'Fosforlu Çizgi',
-          type: 'correct',
-          shape: 'underline',
-          box: { x: 135, y: 310, width: 620, height: 48 },
-          timestamp: 0.80,
-          color: '#facc15',
-          opacity: 0.55,
-          borderWidth: 0,
-          borderRadius: 16,
-          glow: true,
-          animType: 'scale_glow',
-          animDuration: 0.8,
-          checkmark: { enabled: false },
-          crossmark: { enabled: false }
-        },
         {
           id: 'demo_ann_2',
           isChoice: true,
